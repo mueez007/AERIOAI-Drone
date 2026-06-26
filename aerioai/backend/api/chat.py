@@ -224,12 +224,13 @@ def analyze_scene(
             "type": payload.analysis_type
         }
         
-        # Make sure analysis_history is a list
-        current_history = media.analysis_history or []
+        import copy
+        current_history = copy.deepcopy(media.analysis_history) if media.analysis_history else []
         current_history.append(history_entry)
         
-        # We must assign a new list to trigger SQLAlchemy's JSON mutation tracking
-        media.analysis_history = list(current_history)
+        media.analysis_history = current_history
+        from sqlalchemy.orm.attributes import flag_modified
+        flag_modified(media, "analysis_history")
         
         # Also update the primary summary for backwards compatibility/quick viewing
         media.summary = history_entry["summary"]
@@ -281,9 +282,12 @@ def deep_analyze_video(
         "prompt": "",
         "type": payload.analysis_type
     }
-    current_history = media.analysis_history or []
+    import copy
+    current_history = copy.deepcopy(media.analysis_history) if media.analysis_history else []
     current_history.append(history_entry)
-    media.analysis_history = list(current_history)
+    media.analysis_history = current_history
+    from sqlalchemy.orm.attributes import flag_modified
+    flag_modified(media, "analysis_history")
     media.summary = history_entry["summary"]
     media.threat_level = history_entry["threat_level"]
     media.objects_detected = history_entry["detections"]
