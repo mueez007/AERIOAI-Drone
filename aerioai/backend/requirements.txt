@@ -1,0 +1,24 @@
+fastapi
+uvicorn[standard]
+sqlalchemy
+pydantic
+pydantic-settings
+python-jose[cryptography]
+passlib[bcrypt]
+python-multipart
+aiofiles
+opencv-python-headless
+pillow
+httpx
+pyserial
+websockets
+psutil
+email-validator
+numpy
+# Platform-specific (install manually on Raspberry Pi):
+# picamera2
+# AI services (optional - app runs in mock mode without these):
+# ultralytics
+# google-generativeai
+# groq
+# reportlab
