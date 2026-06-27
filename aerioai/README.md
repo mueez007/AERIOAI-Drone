@@ -54,6 +54,7 @@ Built for **final-year engineering projects**, **research demonstrations**, and 
 ---
 
 ## 🏗️ Architecture
+```text
 ┌─────────────────────────────────────────────────────────┐
 │ AERIOAI Platform │
 ├─────────────────────────────────────────────────────────┤
@@ -82,7 +83,7 @@ Built for **final-year engineering projects**, **research demonstrations**, and 
 │ Both connect to Pi over same WiFi network │
 └─────────────────────────────────────────────────────────┘
 
-text
+```
 
 ---
 
@@ -119,6 +120,7 @@ text
 ---
 
 ## 📁 Project Structure
+```text
 aerioai/
 ├── backend/ # FastAPI Backend
 │ ├── main.py # App entry point
@@ -178,7 +180,7 @@ aerioai/
 ├── .env.example # Environment template
 └── README.md # This file
 
-text
+```
 
 ---
 
@@ -217,8 +219,8 @@ python main.py
 # or: uvicorn main:app --host 0.0.0.0 --port 8000 --reload
 API available at: http://localhost:8000 | Docs: http://localhost:8000/docs
 
-2. Setup Frontend
-bash
+### 2. Setup Frontend
+```bash
 cd ../frontend
 npm install
 
@@ -229,8 +231,8 @@ echo "NEXT_PUBLIC_API_URL=http://localhost:8000" > .env.local
 npm run dev
 Dashboard available at: http://localhost:3000
 
-3. Deploy to Raspberry Pi
-bash
+### 3. Deploy to Raspberry Pi
+```bash
 # On Raspberry Pi
 git clone https://github.com/yourusername/aerioai.git
 cd aerioai/backend
@@ -244,7 +246,9 @@ pip install -r requirements.txt
 
 # Run
 python main.py
-4. Connect Mobile App
+```
+
+### 4. Connect Mobile App
 Build Flutter APK from mobile/ directory
 
 Connect phone to same WiFi as Pi
@@ -382,8 +386,8 @@ Geofencing alerts
 Enterprise user management
 
 👨‍💻 Development
-Development Mode (Laptop)
-bash
+### Development Mode (Laptop)
+```bash
 # Terminal 1: Backend
 cd backend
 python main.py
@@ -397,8 +401,10 @@ Frontend: http://localhost:3000
 
 API Docs: http://localhost:8000/docs
 
-Production Mode (Raspberry Pi)
-bash
+```
+
+### Production Mode (Raspberry Pi)
+```bash
 # Start backend
 cd ~/aerioai/backend
 uvicorn main:app --host 0.0.0.0 --port 8000 &
@@ -407,8 +413,10 @@ uvicorn main:app --host 0.0.0.0 --port 8000 &
 cd ~/aerioai/frontend
 npm run build
 npm start -- --port 3000 &
-🧪 Testing
-bash
+```
+
+## 🧪 Testing
+```bash
 # Backend tests
 cd backend
 pytest
@@ -417,7 +425,9 @@ pytest
 cd frontend
 npm run lint
 npm run build  # Verifies no build errors
-📄 License
+```
+
+## 📄 License
 This project is licensed under the MIT License — see the LICENSE file for details.
 
 🙏 Acknowledgments
