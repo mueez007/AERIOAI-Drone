@@ -24,14 +24,28 @@ class NvidiaService:
             if media.filepath.lower().endswith(('.mp4', '.mov', '.avi')):
                 import cv2
                 cap = cv2.VideoCapture(media.filepath)
-                ret, frame = cap.read()
+                total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+                frames_to_extract = 3
+                
+                b64_images = []
+                if total_frames <= 0:
+                    ret, frame = cap.read()
+                    if ret:
+                        _, buffer = cv2.imencode('.jpg', frame)
+                        b64_images.append(base64.b64encode(buffer).decode('utf-8'))
+                else:
+                    step = max(1, total_frames // frames_to_extract)
+                    for i in range(frames_to_extract):
+                        cap.set(cv2.CAP_PROP_POS_FRAMES, i * step)
+                        ret, frame = cap.read()
+                        if ret:
+                            _, buffer = cv2.imencode('.jpg', frame)
+                            b64_images.append(base64.b64encode(buffer).decode('utf-8'))
                 cap.release()
-                if not ret:
+                if not b64_images:
                     raise Exception("Could not read video frame")
-                _, buffer = cv2.imencode('.jpg', frame)
-                b64_image = base64.b64encode(buffer).decode('utf-8')
             else:
-                b64_image = self._encode_image(media.filepath)
+                b64_images = [self._encode_image(media.filepath)]
             
             default_prompt = (
                 "You are AERIOAI. Analyze this aerial image and return a JSON response exactly like this: "
@@ -44,15 +58,16 @@ class NvidiaService:
                 "Accept": "application/json"
             }
             
+            content_array = [{"type": "text", "text": prompt or default_prompt}]
+            for b64_img in b64_images:
+                content_array.append({"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{b64_img}"}})
+                
             payload = {
                 "model": "moonshotai/kimi-k2.6",
                 "messages": [
                     {
                         "role": "user",
-                        "content": [
-                            {"type": "text", "text": prompt or default_prompt},
-                            {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{b64_image}"}}
-                        ]
+                        "content": content_array
                     }
                 ],
                 "max_tokens": 1024,

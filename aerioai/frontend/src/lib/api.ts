@@ -199,6 +199,16 @@ class ApiClient {
     return this.request(`/api/missions?${params}`);
   }
 
+  async getLiveAnalysisHistory(sessionId: string = 'live_stream') {
+    return this.request(`/chat/live-analysis-logs?session_id=${sessionId}`);
+  }
+
+  async deleteLiveAnalysisLogs(sessionId: string = 'live_stream') {
+    return this.request(`/chat/live-analysis-logs?session_id=${sessionId}`, {
+      method: 'DELETE',
+    });
+  }
+
   async getMission(missionId: string) {
     return this.request(`/api/missions/${missionId}`);
   }

@@ -429,7 +429,16 @@ export default function LiveStreamPage() {
               <p className="text-xs text-[var(--text-muted)] mt-1">Real-time object detection and contextual analysis feed</p>
             </div>
             <div className="flex gap-3">
-              <button onClick={() => setAnalysisHistory([])} className="px-3 py-1.5 rounded-lg border border-[var(--border-color)] text-xs font-bold hover:bg-[var(--accent-red)]/10 hover:text-[var(--accent-red)] hover:border-[var(--accent-red)]/30 transition-all">
+              <button 
+                onClick={async () => {
+                  try {
+                    await api.deleteLiveAnalysisLogs("live_stream");
+                    setAnalysisHistory([]);
+                  } catch (e) {
+                    console.error("Failed to clear history", e);
+                  }
+                }}
+                className="px-3 py-1.5 rounded-lg border border-[var(--border-color)] text-xs font-bold hover:bg-[var(--accent-red)]/10 hover:text-[var(--accent-red)] hover:border-[var(--accent-red)]/30 transition-all">
                 Clear History
               </button>
             </div>

@@ -43,8 +43,8 @@ def _build_system_context(db: Session, user_id: int) -> str:
     # 3. Media Context
     media = db.query(Media).order_by(Media.created_at.desc()).limit(20).all()
     if media:
-        photos = [m for m in media if m.media_type == 'PHOTO']
-        videos = [m for m in media if m.media_type == 'VIDEO']
+        photos = [m for m in media if m.media_type.lower() == 'photo']
+        videos = [m for m in media if m.media_type.lower() == 'video']
         
         if photos:
             ctx += "\nRecent Photos:\n"
@@ -58,13 +58,10 @@ def _build_system_context(db: Session, user_id: int) -> str:
                 ctx += f"- Video ID: {m.id}, Filename: {m.filename}, Taken: {m.created_at}, Duration: {m.duration_seconds}s, Summary: {m.summary}\n"
                 ctx += f"  Display with: [🎬 {m.filename}](/api/camera/download/{m.id})\n"
         
-        ctx += "\nCRITICAL RULES FOR MEDIA - READ CAREFULLY:\n"
-        ctx += "When the user asks for photos or images, respond by copying the EXACT 'Display with:' lines from the Recent Photos section above.\n"
-        ctx += "When the user asks for videos, respond by copying the EXACT 'Display with:' lines from the Recent Videos section above.\n"
-        ctx += "DO NOT invent, shorten, or alter the markdown links. Copy them character-for-character.\n"
-        ctx += "DO NOT wrap them in code blocks. Just paste the markdown directly.\n"
-        ctx += "DO NOT provide analysis unless the user explicitly asks 'analyze', 'what is in', or 'describe'.\n"
-        ctx += "If the user asks about a specific media's content, use its Summary and Threat Level from the context above.\n"
+        ctx += "CRITICAL RULES FOR MEDIA - READ CAREFULLY:\n"
+        ctx += "- If the user asks to SEE, RETRIEVE, or SHOW photos/videos, respond by copying the EXACT 'Display with:' lines from the matching media above.\n"
+        ctx += "- If the user asks to SUMMARIZE, ANALYZE, or DESCRIBE the media, DO NOT just link them. Instead, read the 'Summary' and 'Threat' from the context above and write a conversational response answering their question.\n"
+        ctx += "- DO NOT invent, shorten, or alter the markdown links. Copy them character-for-character.\n"
             
     return ctx
 
@@ -91,7 +88,12 @@ def chat_message(
     elif payload.mission_id:
         response_text = groq_service.chat_about_mission(payload.message, payload.mission_id, db)
     else:
-        response_text = groq_service.general_chat(payload.message, context=ctx)
+        response_text = groq_service.general_chat(
+            message=payload.message, 
+            context=ctx,
+            camera_service=camera_service,
+            gemini_service=gemini_service
+        )
 
     audio_url = None
     if payload.generate_audio:
@@ -178,6 +180,20 @@ async def voice_command(
         audio_url=audio_path,
     )
 
+
+@router.delete("/live-analysis-logs")
+def clear_live_analysis_logs(
+    session_id: str = "live_stream",
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Clear analysis logs for a given session"""
+    db.query(LiveAnalysisLog).filter(
+        LiveAnalysisLog.user_id == current_user.id,
+        LiveAnalysisLog.session_id == session_id
+    ).delete()
+    db.commit()
+    return {"message": "Logs cleared"}
 
 @router.post("/analyze-scene", response_model=SceneAnalysisResponse)
 def analyze_scene(
@@ -273,12 +289,21 @@ def deep_analyze_video(
         result = gemini_service.analyze_video_deep_reasoning(media)
 
     import datetime
+    
+    summary = result.get("summary", "")
+    if isinstance(summary, list):
+        summary = "\n".join(summary)
+        
+    recommendations = result.get("recommendations", "")
+    if isinstance(recommendations, list):
+        recommendations = "\n".join(recommendations)
+        
     history_entry = {
         "timestamp": datetime.datetime.now().isoformat(),
-        "summary": result.get("summary", ""),
+        "summary": summary,
         "threat_level": result.get("threat_level", "LOW"),
         "detections": result.get("objects", []),
-        "recommendations": result.get("recommendations", ""),
+        "recommendations": recommendations,
         "prompt": "",
         "type": payload.analysis_type
     }
@@ -295,11 +320,11 @@ def deep_analyze_video(
 
     return DeepVideoAnalysisResponse(
         media_id=media.id,
-        summary=result.get("summary", ""),
+        summary=summary,
         detections=result.get("objects", []),
         threat_level=result.get("threat_level", "LOW"),
         confidence=result.get("confidence", 0.0),
-        recommendations=result.get("recommendations", ""),
+        recommendations=recommendations,
     )
 
 

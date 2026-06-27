@@ -26,8 +26,8 @@ class GroqService:
     def is_available(self) -> bool:
         return self.client is not None
 
-    def general_chat(self, message: str, context: str = "") -> str:
-        """General conversation with Groq LLM."""
+    def general_chat(self, message: str, context: str = "", camera_service=None, gemini_service=None) -> str:
+        """General conversation with Groq LLM, with tool calling support."""
         if not self.client:
             return self._fallback_response(message)
 
@@ -39,28 +39,77 @@ class GroqService:
                 "1. For casual greetings (hey, hi, hello, what's up, etc.), respond warmly and casually like a friend. "
                 "Do NOT analyze scenes or give technical reports for casual chat.\n"
                 "2. For mission/surveillance questions, be concise and professional.\n"
-                "3. When the user asks about photos or videos from a specific date/time, look through the 'Recent Media' in the System Context below. "
-                "Display matching media using this exact markdown format: ![Description](http://localhost:8000/api/camera/thumbnail/<ID>)\n"
-                "For videos, use: [Video: filename](http://localhost:8000/api/camera/download/<ID>)\n"
-                "4. Keep responses to 1-4 sentences unless the user asks for detail.\n"
-                "5. Never say you can't retrieve images or videos — you have the media data in context below.\n\n"
+                "3. When the user asks to SEE or RETRIEVE photos or videos from a specific date/time, look through the 'Recent Media' in the System Context below. "
+                "Display matching media using this exact markdown format: ![Description](/api/camera/thumbnail/<ID>)\n"
+                "For videos, use: [Video: filename](/api/camera/download/<ID>)\n"
+                "4. If the user asks to SUMMARIZE, ANALYZE, or DESCRIBE the media, write a conversational response based on the 'Summary' and 'Threat' from the context. Do not just output the markdown link.\n"
+                "5. Keep responses to 1-4 sentences unless the user asks for detail.\n"
+                "6. Never say you can't retrieve images or videos — you have the media data in context below.\n"
+                "7. If the user asks 'what do you see in the live stream', 'what are you looking at right now', or similar, CALL the analyze_live_camera tool.\n\n"
             )
             if context:
                 sys_prompt += f"System Context:\n{context}\n\n"
 
+            tools = [
+                {
+                    "type": "function",
+                    "function": {
+                        "name": "analyze_live_camera",
+                        "description": "Capture a snapshot from the live camera stream and get a detailed description of what is currently visible.",
+                        "parameters": {
+                            "type": "object",
+                            "properties": {},
+                        }
+                    }
+                }
+            ]
+
+            messages = [
+                {"role": "system", "content": sys_prompt},
+                {"role": "user", "content": message},
+            ]
+
             response = self.client.chat.completions.create(
                 model="llama-3.3-70b-versatile",
-                messages=[
-                    {
-                        "role": "system",
-                        "content": sys_prompt,
-                    },
-                    {"role": "user", "content": message},
-                ],
+                messages=messages,
+                tools=tools,
+                tool_choice="auto",
                 max_tokens=500,
                 temperature=0.7,
             )
-            return response.choices[0].message.content.strip()
+            
+            response_message = response.choices[0].message
+            
+            if response_message.tool_calls:
+                for tool_call in response_message.tool_calls:
+                    if tool_call.function.name == "analyze_live_camera":
+                        if camera_service and gemini_service:
+                            frame_bytes = camera_service.get_current_snapshot_bytes()
+                            if frame_bytes:
+                                vision_analysis = gemini_service.analyze_frame_with_query(frame_bytes, "Describe what you see in this live camera feed.", context="")
+                            else:
+                                vision_analysis = "Error: Camera is currently unavailable."
+                        else:
+                            vision_analysis = "Error: Internal services not loaded."
+                        
+                        messages.append(response_message)
+                        messages.append({
+                            "role": "tool",
+                            "tool_call_id": tool_call.id,
+                            "name": tool_call.function.name,
+                            "content": vision_analysis,
+                        })
+                
+                # Second API call with the tool result
+                second_response = self.client.chat.completions.create(
+                    model="llama-3.3-70b-versatile",
+                    messages=messages,
+                    max_tokens=500,
+                    temperature=0.7,
+                )
+                return second_response.choices[0].message.content.strip()
+
+            return response_message.content.strip()
 
         except Exception as e:
             print(f"Groq chat error: {e}")

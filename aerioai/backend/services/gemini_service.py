@@ -141,18 +141,33 @@ class GeminiService:
         try:
             import cv2
             cap = cv2.VideoCapture(media.filepath)
-            ret, frame = cap.read()
-            cap.release()
+            total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+            frames_to_extract = 5
             
-            if not ret:
-                raise Exception("Could not read video frame for analysis")
-                
-            _, buffer = cv2.imencode('.jpg', frame)
-            frame_bytes = buffer.tobytes()
+            if total_frames <= 0:
+                # Fallback if frame count is unknown
+                ret, frame = cap.read()
+                cap.release()
+                if not ret:
+                    raise Exception("Could not read video frame for analysis")
+                _, buffer = cv2.imencode('.jpg', frame)
+                images = [{"mime_type": "image/jpeg", "data": buffer.tobytes()}]
+            else:
+                step = max(1, total_frames // frames_to_extract)
+                images = []
+                for i in range(frames_to_extract):
+                    cap.set(cv2.CAP_PROP_POS_FRAMES, i * step)
+                    ret, frame = cap.read()
+                    if ret:
+                        _, buffer = cv2.imencode('.jpg', frame)
+                        images.append({"mime_type": "image/jpeg", "data": buffer.tobytes()})
+                cap.release()
+                if not images:
+                    raise Exception("Could not read any video frames for analysis")
 
             default_prompt = """
-            You are an expert video reasoning system. Perform a deep structural analysis on this video frame.
-            Provide detailed reasoning about the physical world interactions, potential threats, and activities.
+            You are an expert video reasoning system. Perform a deep structural analysis on this sequence of video frames.
+            Provide detailed reasoning about the physical world interactions, potential threats, and activities unfolding over time.
             Return a JSON response with:
             {
                 "summary": "Deep, structured description of the scene using bullet points.",
@@ -166,12 +181,8 @@ class GeminiService:
             Only return the JSON, no other text.
             """
 
-            image = {
-                "mime_type": "image/jpeg",
-                "data": frame_bytes,
-            }
-
-            response = self.model.generate_content([default_prompt, image])
+            content_parts = [default_prompt] + images
+            response = self.model.generate_content(content_parts)
             result_text = response.text.strip()
             
             if result_text.startswith("```json"):

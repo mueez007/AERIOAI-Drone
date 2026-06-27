@@ -1,6 +1,9 @@
 "use client";
 
 import { cn } from "@/lib/utils";
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
+import { API_BASE_URL } from '@/lib/constants';
 
 interface MessageBubbleProps {
   role: "user" | "assistant";
@@ -47,7 +50,32 @@ export default function MessageBubble({
               : "bg-gradient-to-br from-[var(--accent-cyan)]/20 to-[var(--accent-cyan)]/5 border border-[var(--accent-cyan)]/20 text-[var(--text-primary)] rounded-tr-sm"
           )}
         >
-          <p className="whitespace-pre-wrap">{content}</p>
+          <ReactMarkdown
+            remarkPlugins={[remarkGfm]}
+            components={{
+              img: ({ node, ...props }) => {
+                const src = props.src?.startsWith('/') ? `${API_BASE_URL}${props.src}` : props.src;
+                return (
+                  <img {...props} src={src} className="max-w-full max-h-32 object-contain rounded-lg my-1 cursor-pointer hover:opacity-90 transition-opacity shadow-sm" onClick={() => window.open(src as string, '_blank')} />
+                );
+              },
+              a: ({ node, ...props }) => {
+                const href = props.href?.startsWith('/') ? `${API_BASE_URL}${props.href}` : props.href;
+                const isVideo = props.href?.includes("/api/camera/download");
+                if (isVideo) {
+                  return (
+                    <span className="block my-1 bg-black/20 p-1 rounded-xl">
+                      <video src={href} controls className="max-w-full max-h-32 rounded-lg shadow-sm" preload="metadata" />
+                    </span>
+                  );
+                }
+                return <a {...props} href={href} className="text-[var(--accent-cyan)] hover:underline break-all" target="_blank" rel="noopener noreferrer" />;
+              },
+              p: ({ node, ...props }) => <p {...props} className="whitespace-pre-wrap" />
+            }}
+          >
+            {content}
+          </ReactMarkdown>
         </div>
         <p
           className={cn(

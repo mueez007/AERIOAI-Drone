@@ -100,7 +100,7 @@ export default function VideoModal({ video, onClose, onDelete, autoAction }: Pro
       const newAnalysis: Analysis = {
         summary: res.summary || "Analysis complete.",
         events: res.recommendations || "",
-        objects: (res.detections || []).map((d: any) => d.class).join(", ") || "None detected",
+        objects: Array.isArray(res.detections) ? res.detections.map((d: any) => d.class || d.label || "Unknown").join(", ") || "None detected" : "None detected",
         threat_level: res.threat_level || "LOW",
       };
       setAnalyses(prev => ({ ...prev, [type]: newAnalysis }));
