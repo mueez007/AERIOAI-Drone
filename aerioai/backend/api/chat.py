@@ -183,15 +183,19 @@ async def voice_command(
 
 @router.delete("/live-analysis-logs")
 def clear_live_analysis_logs(
-    session_id: str = "live_stream",
+    context: str = None,
+    session_id: str = None,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """Clear analysis logs for a given session"""
-    db.query(LiveAnalysisLog).filter(
-        LiveAnalysisLog.user_id == current_user.id,
-        LiveAnalysisLog.session_id == session_id
-    ).delete()
+    """Clear analysis logs for a given session or context"""
+    query = db.query(LiveAnalysisLog).filter(LiveAnalysisLog.user_id == current_user.id)
+    if context:
+        query = query.filter(LiveAnalysisLog.context == context)
+    if session_id:
+        query = query.filter(LiveAnalysisLog.session_id == session_id)
+        
+    query.delete(synchronize_session=False)
     db.commit()
     return {"message": "Logs cleared"}
 

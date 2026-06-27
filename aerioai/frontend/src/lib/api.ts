@@ -200,11 +200,15 @@ class ApiClient {
   }
 
   async getLiveAnalysisHistory(sessionId: string = 'live_stream') {
-    return this.request(`/chat/live-analysis-logs?session_id=${sessionId}`);
+    return this.request(`/api/chat/live-analysis-logs?session_id=${sessionId}`);
   }
 
-  async deleteLiveAnalysisLogs(sessionId: string = 'live_stream') {
-    return this.request(`/chat/live-analysis-logs?session_id=${sessionId}`, {
+  async deleteLiveAnalysisLogs(context?: string, sessionId?: string) {
+    const params = new URLSearchParams();
+    if (context) params.set("context", context);
+    if (sessionId) params.set("session_id", sessionId);
+    const qs = params.toString();
+    return this.request(`/api/chat/live-analysis-logs${qs ? `?${qs}` : ""}`, {
       method: 'DELETE',
     });
   }
