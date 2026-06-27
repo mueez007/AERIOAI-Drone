@@ -37,7 +37,7 @@ class TTSService:
         try:
             import httpx
 
-            voice_id = "3OUAuH7CeDSQhCCijs1Y" # User requested voice id
+            voice_id = "JBFqnCBsd6RMkjVDRZzb" # User requested voice id
             url = f"https://api.elevenlabs.io/v1/text-to-speech/{voice_id}"
 
             headers = {

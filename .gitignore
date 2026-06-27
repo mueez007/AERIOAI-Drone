@@ -2,3 +2,7 @@
 aerioai/backend/.env
 aerioai/frontend/.env
 aerioai/frontend/.env.local
+aerioai/backend/aerioai.db
+aerioai/media/audio/*
+aerioai/media/photos/*
+aerioai/media/videos/*
