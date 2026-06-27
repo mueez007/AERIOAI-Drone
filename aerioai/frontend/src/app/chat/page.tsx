@@ -180,7 +180,8 @@ export default function ChatPage() {
 
         // Play ElevenLabs audio from backend if available
         if (voiceResponses && res?.audio_url) {
-          const audio = new Audio(`http://localhost:8000${res.audio_url}?t=${Date.now()}`);
+          const audioUrl = api.getAudioUrl(res.audio_url) + `?t=${Date.now()}`;
+          const audio = new Audio(audioUrl);
           audio.play().catch(e => console.error("Audio play failed", e));
         }
       } catch {
@@ -209,7 +210,8 @@ export default function ChatPage() {
           setMessages((m) => [...m, { id: (Date.now() + 1).toString(), role: "ai", content: reply, timestamp: now() }]);
           // Play ElevenLabs audio from backend
           if (res?.audio_url) {
-            const audio = new Audio(`http://localhost:8000${res.audio_url}?t=${Date.now()}`);
+            const audioUrl = api.getAudioUrl(res.audio_url) + `?t=${Date.now()}`;
+            const audio = new Audio(audioUrl);
             audio.play().catch(e => console.error("Audio play failed", e));
           }
         }

@@ -142,7 +142,7 @@ export default function LiveStreamPage() {
       // Play startup announcement
       api.getStartupAnnouncement().then((res: any) => {
         if (res?.audio_url) {
-          const audio = new Audio(`http://localhost:8000${res.audio_url}`);
+          const audio = new Audio(api.getAudioUrl(res.audio_url));
           audio.play().catch(e => console.error("Audio play failed", e));
         }
       }).catch(e => console.error("Failed to get startup announcement", e));
@@ -203,7 +203,7 @@ export default function LiveStreamPage() {
       setAnalysisHistory(prev => [aiRec, ...prev]);
 
       if (voiceMode && res?.audio_url) {
-        new Audio(`http://localhost:8000${res.audio_url}`).play();
+        new Audio(api.getAudioUrl(res.audio_url)).play();
       }
     } catch (e) {
       console.error(e);
@@ -236,7 +236,7 @@ export default function LiveStreamPage() {
         }, ...prev]);
 
         if (res?.audio_url) {
-          new Audio(`http://localhost:8000${res.audio_url}`).play();
+          new Audio(api.getAudioUrl(res.audio_url)).play();
         }
       }
     } catch (e) {

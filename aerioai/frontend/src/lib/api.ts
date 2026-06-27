@@ -160,6 +160,10 @@ class ApiClient {
     return `${this.baseUrl}/api/camera/download/${mediaId}`;
   }
 
+  getAudioUrl(path: string): string {
+    return `${this.baseUrl}${path}`;
+  }
+
   // Telemetry
   async getTelemetry() {
     return this.request("/api/telemetry");
