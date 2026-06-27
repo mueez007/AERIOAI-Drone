@@ -1,0 +1,4 @@
+.env
+aerioai/backend/.env
+aerioai/frontend/.env
+aerioai/frontend/.env.local

@@ -54,8 +54,10 @@ export default function VideosPage() {
     } catch {}
   }, []);
 
-  const formatDate = (d: string) =>
-    new Date(d).toLocaleDateString("en-US", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+  const formatDate = (d: string) => {
+    const dateStr = d.endsWith('Z') ? d : `${d}Z`;
+    return new Date(dateStr).toLocaleDateString("en-US", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+  };
 
   return (
     <div className="p-6 min-h-screen">
