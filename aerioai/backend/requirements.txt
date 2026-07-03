@@ -15,10 +15,12 @@ websockets
 psutil
 email-validator
 numpy
-# Platform-specific (install manually on Raspberry Pi):
-# picamera2
-# AI services (optional - app runs in mock mode without these):
-# ultralytics
-# google-generativeai
-# groq
-# reportlab
+
+# Raspberry Pi Camera Module 3 dependency
+picamera2
+
+# AI services (optional)
+ultralytics
+google-generativeai
+groq
+reportlab
