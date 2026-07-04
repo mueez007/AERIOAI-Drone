@@ -27,8 +27,8 @@ class CameraService:
             if settings.CAMERA_SOURCE == "csi":
                 import picamera2
                 self.camera = picamera2.Picamera2()
-                config = self.camera.create_still_configuration(
-                    main={"size": (settings.CAMERA_WIDTH, settings.CAMERA_HEIGHT)}
+                config = self.camera.create_video_configuration(
+                    main={"size": (1920, 1080), "format": "RGB888", "framerate": settings.CAMERA_FPS}
                 )
                 self.camera.configure(config)
                 self.camera.start()
@@ -41,6 +41,12 @@ class CameraService:
                     self.camera = None
         except Exception as e:
             print(f"Camera open error: {e}")
+            if self.camera is not None and settings.CAMERA_SOURCE == "csi":
+                try:
+                    self.camera.stop()
+                    self.camera.close()
+                except Exception:
+                    pass
             self.camera = None
 
     def _camera_opened(self) -> bool:
@@ -53,6 +59,12 @@ class CameraService:
         if self.camera is not None:
             if settings.CAMERA_SOURCE == "webcam":
                 self.camera.release()
+            elif settings.CAMERA_SOURCE == "csi":
+                try:
+                    self.camera.stop()
+                    self.camera.close()
+                except Exception:
+                    pass
             self.camera = None
         print("Camera: released (no active streams)")
 
@@ -65,10 +77,17 @@ class CameraService:
             if not self._camera_opened():
                 self._open_camera()
             if not self._camera_opened():
+                time.sleep(1.0)
                 return None
 
         if settings.CAMERA_SOURCE == "csi":
-            return self.camera.capture_array()
+            try:
+                frame = self.camera.capture_array("main")
+                return cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
+            except Exception as e:
+                print(f"Frame capture error: {e}")
+                time.sleep(0.5)
+                return None
         if settings.CAMERA_SOURCE == "webcam":
             ret, frame = self.camera.read()
             if ret:
