@@ -1,8 +1,61 @@
+# Secrets and Environment Variables
 .env
-aerioai/backend/.env
-aerioai/frontend/.env
-aerioai/frontend/.env.local
+.env.*
+*.env
+*.env.*
+!.env.example
+!*.env.example
+*.pem
+*.key
+*.cert
+*.crt
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+dist/
+*.egg-info/
+venv/
+.venv/
+ENV/
+
+# Node & Next.js
+node_modules/
+.next/
+out/
+.vercel/
+*.tsbuildinfo
+next-env.d.ts
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Databases
+*.db
+*.sqlite3
 aerioai/backend/aerioai.db
+
+# Media storage
 aerioai/media/audio/*
 aerioai/media/photos/*
 aerioai/media/videos/*
+!aerioai/media/audio/.gitkeep
+!aerioai/media/photos/.gitkeep
+!aerioai/media/videos/.gitkeep
+
+# macOS & Editor files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*.swo
