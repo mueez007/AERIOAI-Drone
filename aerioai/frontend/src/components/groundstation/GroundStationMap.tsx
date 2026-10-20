@@ -1,7 +1,7 @@
 "use client";
 
 import dynamic from "next/dynamic";
-import { GPSData, AttitudeData } from "@/types/api";
+import { GPSData, AttitudeData, SARObservation, CoverageRouteResponse, PolygonCoordinate } from "@/types/api";
 import { MissionModeId, MapWaypoint, SurvivorTarget } from "./types";
 
 interface GroundStationMapProps {
@@ -11,6 +11,11 @@ interface GroundStationMapProps {
   waypoints?: MapWaypoint[];
   onAddWaypoint?: (wp: MapWaypoint) => void;
   survivors?: SurvivorTarget[];
+  sarObservations?: SARObservation[];
+  sarRoute?: CoverageRouteResponse | null;
+  sarPolygon?: PolygonCoordinate[];
+  selectedObservationId?: string | null;
+  onSelectObservation?: (obs: SARObservation) => void;
   className?: string;
   isSimulated?: boolean;
 }

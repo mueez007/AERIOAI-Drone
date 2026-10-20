@@ -8,10 +8,10 @@ from core.database import get_db
 from core.models import User, Media, MediaType, AuditLog
 from schemas.camera import MediaListResponse, CaptureResponse, VideoStartResponse, VideoStopResponse
 from core.security import get_current_user
-from services.camera_service import CameraService
+from services.camera_service import shared_camera_service
 
 router = APIRouter(prefix="/api/camera", tags=["Camera"])
-camera_service = CameraService()
+camera_service = shared_camera_service
 
 
 @router.post("/capture", response_model=CaptureResponse)

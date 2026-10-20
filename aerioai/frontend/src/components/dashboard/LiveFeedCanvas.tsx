@@ -2,10 +2,12 @@
 
 import { useEffect, useRef, useState, useCallback } from "react";
 
-interface Detection {
+export interface Detection {
   label: string;
   confidence: number;
   bbox: [number, number, number, number]; // x, y, w, h (0-1 normalized)
+  mask_polygon?: number[][] | null; // [[norm_x, norm_y], ...] normalized silhouette points
+  track_id?: number | null;
 }
 
 interface Props {
@@ -27,6 +29,19 @@ interface Props {
   onFullscreenChange?: (isFullscreen: boolean) => void;
   detectionOverlaysEnabled?: boolean;
   onToggleDetectionOverlays?: () => void;
+
+  // Camera Vision Pipeline Controls
+  missionMode?: string;
+  isLiveTracking?: boolean;
+  trackingStatus?: "loading" | "ready" | "running" | "unavailable" | "error" | "stopping" | "stopped";
+  onToggleLiveTracking?: () => void;
+  isHumanMaskEnabled?: boolean;
+  maskStatus?: "off" | "loading" | "active" | "unavailable";
+  onToggleHumanMask?: () => void;
+  isObjectDetectionEnabled?: boolean;
+  onToggleObjectDetection?: () => void;
+  inferenceFps?: number;
+  meanInferenceMs?: number;
 }
 
 export default function LiveFeedCanvas({
@@ -48,6 +63,17 @@ export default function LiveFeedCanvas({
   onFullscreenChange,
   detectionOverlaysEnabled = true,
   onToggleDetectionOverlays,
+  missionMode,
+  isLiveTracking = false,
+  trackingStatus = "stopped",
+  onToggleLiveTracking,
+  isHumanMaskEnabled = false,
+  maskStatus = "off",
+  onToggleHumanMask,
+  isObjectDetectionEnabled = false,
+  onToggleObjectDetection,
+  inferenceFps = 0,
+  meanInferenceMs = 0,
 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const videoRef = useRef<HTMLImageElement>(null);
@@ -127,11 +153,11 @@ export default function LiveFeedCanvas({
     return `${m}:${s}`;
   };
 
-  // Draw bounding boxes on canvas whenever detections change
+  // Draw bounding boxes and human segmentation masks on canvas whenever detections change
   useEffect(() => {
     const canvas = canvasRef.current;
     const img = videoRef.current;
-    if (!canvas || !img || !loaded || !detectionOverlaysEnabled) {
+    if (!canvas || !img || !loaded) {
       if (canvas) {
         const ctx = canvas.getContext("2d");
         ctx?.clearRect(0, 0, canvas.width, canvas.height);
@@ -146,61 +172,146 @@ export default function LiveFeedCanvas({
     canvas.height = img.clientHeight;
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-    const COLORS: Record<string, string> = {
-      person: "#34D399",
-      vehicle: "#60A5FA",
-      car: "#60A5FA",
-      truck: "#FBBF24",
-      default: "#A78BFA",
-    };
+    if (detections.length === 0) return;
 
-    detections.forEach((det) => {
-      const [nx, ny, nw, nh] = det.bbox;
-      const x = nx * canvas.width;
-      const y = ny * canvas.height;
-      const w = nw * canvas.width;
-      const h = nh * canvas.height;
-      const color = COLORS[det.label.toLowerCase()] || COLORS.default;
-      const pct = Math.round(det.confidence * 100);
+    // Precise coordinate transformation accounting for object-cover vs object-contain
+    const naturalW = img.naturalWidth || canvas.width;
+    const naturalH = img.naturalHeight || canvas.height;
+    const naturalAspect = naturalW / naturalH;
+    const clientAspect = canvas.width / canvas.height;
 
-      // Box
-      ctx.strokeStyle = color;
-      ctx.lineWidth = 2;
-      ctx.strokeRect(x, y, w, h);
+    let displayedW = canvas.width;
+    let displayedH = canvas.height;
+    let offsetX = 0;
+    let offsetY = 0;
 
-      // Corner accent marks
-      const cs = 8;
-      ctx.lineWidth = 3;
-      [
-        [x, y, x + cs, y, x, y + cs],
-        [x + w - cs, y, x + w, y, x + w, y + cs],
-        [x, y + h - cs, x, y + h, x + cs, y + h],
-        [x + w - cs, y + h, x + w, y + h, x + w, y + h - cs],
-      ].forEach(([x1, y1, x2, y2, x3, y3]) => {
-        ctx.beginPath();
-        ctx.moveTo(x1, y1);
-        ctx.lineTo(x2, y2);
-        ctx.lineTo(x3, y3);
-        ctx.strokeStyle = color;
-        ctx.stroke();
+    if (isFullscreen) {
+      // object-contain in fullscreen
+      if (clientAspect > naturalAspect) {
+        displayedH = canvas.height;
+        displayedW = displayedH * naturalAspect;
+        offsetX = (canvas.width - displayedW) / 2;
+        offsetY = 0;
+      } else {
+        displayedW = canvas.width;
+        displayedH = displayedW / naturalAspect;
+        offsetX = 0;
+        offsetY = (canvas.height - displayedH) / 2;
+      }
+    } else {
+      // object-cover in normal dashboard panel
+      if (clientAspect > naturalAspect) {
+        displayedW = canvas.width;
+        displayedH = displayedW / naturalAspect;
+        offsetX = 0;
+        offsetY = (canvas.height - displayedH) / 2;
+      } else {
+        displayedH = canvas.height;
+        displayedW = displayedH * naturalAspect;
+        offsetX = (canvas.width - displayedW) / 2;
+        offsetY = 0;
+      }
+    }
+
+    // 1. Render Human Segmentation Masks (if enabled)
+    if (isHumanMaskEnabled) {
+      detections.forEach((det) => {
+        if (det.mask_polygon && det.mask_polygon.length >= 3) {
+          ctx.beginPath();
+          det.mask_polygon.forEach(([px, py], idx) => {
+            const mx = offsetX + px * displayedW;
+            const my = offsetY + py * displayedH;
+            if (idx === 0) ctx.moveTo(mx, my);
+            else ctx.lineTo(mx, my);
+          });
+          ctx.closePath();
+
+          // Restrained translucent emerald green fill
+          ctx.fillStyle = "rgba(52, 211, 153, 0.32)";
+          ctx.fill();
+
+          // Crisp contour stroke
+          ctx.strokeStyle = "rgba(52, 211, 153, 0.85)";
+          ctx.lineWidth = 1.5;
+          ctx.stroke();
+        }
       });
+    }
 
-      // Label pill
-      const label = `${det.label} ${pct}%`;
-      ctx.font = "bold 10px Inter, sans-serif";
-      const tw = ctx.measureText(label).width;
-      const ph = 18, pw = tw + 8, pr = 3;
-      const lx = x, ly = y - ph - 2;
+    // 2. Render Rectangular Bounding Boxes (if enabled)
+    if (detectionOverlaysEnabled) {
+      const COLORS: Record<string, string> = {
+        person: "#34D399",
+        vehicle: "#60A5FA",
+        car: "#60A5FA",
+        truck: "#FBBF24",
+        bus: "#F59E0B",
+        motorcycle: "#38BDF8",
+        bicycle: "#C084FC",
+        default: "#60A5FA",
+      };
 
-      ctx.fillStyle = color + "CC";
-      ctx.beginPath();
-      ctx.roundRect(lx, ly, pw, ph, pr);
-      ctx.fill();
+      detections.forEach((det) => {
+        const [nx, ny, nw, nh] = det.bbox;
+        const x = offsetX + nx * displayedW;
+        const y = offsetY + ny * displayedH;
+        const w = nw * displayedW;
+        const h = nh * displayedH;
+        
+        const lowerLabel = det.label.toLowerCase();
+        let color = COLORS.default;
+        if (lowerLabel.includes("person")) color = COLORS.person;
+        else if (lowerLabel.includes("car")) color = COLORS.car;
+        else if (lowerLabel.includes("truck")) color = COLORS.truck;
+        else if (lowerLabel.includes("bus")) color = COLORS.bus;
+        else if (lowerLabel.includes("motorcycle")) color = COLORS.motorcycle;
+        else if (lowerLabel.includes("bicycle")) color = COLORS.bicycle;
+        else if (lowerLabel.includes("vehicle")) color = COLORS.vehicle;
 
-      ctx.fillStyle = "#000";
-      ctx.fillText(label, lx + 4, ly + 12);
-    });
-  }, [detections, loaded, detectionOverlaysEnabled]);
+        const pct = Math.round(det.confidence * 100);
+
+        // Bounding Box Rectangle
+        ctx.strokeStyle = color;
+        ctx.lineWidth = 2;
+        ctx.strokeRect(x, y, w, h);
+
+        // Corner accent marks
+        const cs = 8;
+        ctx.lineWidth = 3;
+        [
+          [x, y, x + cs, y, x, y + cs],
+          [x + w - cs, y, x + w, y, x + w, y + cs],
+          [x, y + h - cs, x, y + h, x + cs, y + h],
+          [x + w - cs, y + h, x + w, y + h, x + w, y + h - cs],
+        ].forEach(([x1, y1, x2, y2, x3, y3]) => {
+          ctx.beginPath();
+          ctx.moveTo(x1, y1);
+          ctx.lineTo(x2, y2);
+          ctx.lineTo(x3, y3);
+          ctx.strokeStyle = color;
+          ctx.stroke();
+        });
+
+        // Label pill with Track ID if available
+        const label = det.track_id !== undefined && det.track_id !== null
+          ? `TRK #${det.track_id} · ${det.label} ${pct}%`
+          : `${det.label} ${pct}%`;
+
+        ctx.font = "bold 10px Inter, sans-serif";
+        const tw = ctx.measureText(label).width;
+        const ph = 18, pw = tw + 8, pr = 3;
+        const lx = x, ly = Math.max(0, y - ph - 2);
+
+        ctx.fillStyle = color + "CC";
+        ctx.beginPath();
+        ctx.roundRect(lx, ly, pw, ph, pr);
+        ctx.fill();
+
+        ctx.fillStyle = "#000";
+        ctx.fillText(label, lx + 4, ly + 12);
+      });
+    }
+  }, [detections, loaded, detectionOverlaysEnabled, isHumanMaskEnabled, isFullscreen]);
 
   // Validated Telemetry Computations
   const hasHeading = heading !== null && heading !== undefined && !isNaN(heading);
@@ -264,24 +375,151 @@ export default function LiveFeedCanvas({
 
       {/* 1. TOP TELEMETRY STATUS RIBBON OVER VIDEO */}
       <div className="absolute top-3 inset-x-3 z-20 flex items-center justify-between pointer-events-none">
-        {/* Left: Stream & AI Overlays */}
-        <div className="flex items-center gap-2 pointer-events-auto">
+        {/* Left: Stream, Detection, Human Mask & AI Overlays */}
+        <div className="flex items-center flex-wrap gap-2 pointer-events-auto">
           <span className="px-2.5 py-1 rounded-full bg-black/65 backdrop-blur-md border border-white/15 text-[10px] font-mono font-bold text-white flex items-center gap-1.5 shadow-lg">
             <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse shadow-[0_0_8px_rgba(239,68,68,0.8)]" />
             LIVE FEED
           </span>
 
-          {onToggleDetectionOverlays && (
+          {/* 1. START DETECTION / STOP DETECTION */}
+          {onToggleLiveTracking && (
             <button
-              onClick={onToggleDetectionOverlays}
-              className={`px-2.5 py-1 rounded-full text-[10px] font-mono font-bold border transition-all shadow-lg ${
-                detectionOverlaysEnabled
-                  ? "bg-[var(--accent-cyan)]/25 border-[var(--accent-cyan)]/50 text-[var(--accent-cyan)]"
-                  : "bg-black/60 border-white/10 text-gray-400 hover:text-white"
+              onClick={(e) => {
+                e.stopPropagation();
+                if (trackingStatus !== "unavailable" && trackingStatus !== "loading" && trackingStatus !== "stopping") {
+                  onToggleLiveTracking();
+                }
+              }}
+              disabled={trackingStatus === "unavailable" || trackingStatus === "loading" || trackingStatus === "stopping"}
+              title={isLiveTracking ? "Click to Stop Live Detection & Tracking" : "Click to Start Live Detection & Tracking"}
+              className={`px-2.5 py-1 rounded-full text-[10px] font-mono font-bold border transition-all shadow-lg flex items-center gap-1.5 cursor-pointer ${
+                trackingStatus === "running"
+                  ? "bg-emerald-500/25 border-emerald-500/50 text-emerald-300 hover:bg-red-500/25 hover:border-red-500/50 hover:text-red-300"
+                  : trackingStatus === "loading" || trackingStatus === "stopping"
+                  ? "bg-amber-500/25 border-amber-500/50 text-amber-300 cursor-wait"
+                  : trackingStatus === "error"
+                  ? "bg-red-500/25 border-red-500/50 text-red-300 hover:bg-red-500/35"
+                  : trackingStatus === "unavailable"
+                  ? "bg-gray-850 border-gray-700 text-gray-500 cursor-not-allowed"
+                  : "bg-black/60 border-white/10 text-gray-400 hover:text-white hover:border-white/20"
               }`}
             >
-              AI BOXES: {detectionOverlaysEnabled ? "ON" : "OFF"}
+              <span
+                className={`w-1.5 h-1.5 rounded-full ${
+                  trackingStatus === "running"
+                    ? "bg-emerald-400 animate-pulse shadow-[0_0_6px_#34d399]"
+                    : trackingStatus === "loading" || trackingStatus === "stopping"
+                    ? "bg-amber-400 animate-ping"
+                    : trackingStatus === "error"
+                    ? "bg-red-400"
+                    : "bg-gray-500"
+                }`}
+              />
+              {trackingStatus === "running"
+                ? "STOP DETECTION"
+                : trackingStatus === "loading"
+                ? "STARTING..."
+                : trackingStatus === "stopping"
+                ? "STOPPING..."
+                : trackingStatus === "error"
+                ? "DETECTION ERROR"
+                : trackingStatus === "unavailable"
+                ? "DETECTION UNAVAILABLE"
+                : "START DETECTION"}
             </button>
+          )}
+
+          {/* 2. BOXES ON / BOXES OFF */}
+          {onToggleDetectionOverlays && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                onToggleDetectionOverlays();
+              }}
+              title={detectionOverlaysEnabled ? "Hide Bounding Boxes" : "Show Bounding Boxes"}
+              className={`px-2.5 py-1 rounded-full text-[10px] font-mono font-bold border transition-all shadow-lg flex items-center gap-1.5 cursor-pointer ${
+                detectionOverlaysEnabled
+                  ? "bg-[var(--accent-cyan)]/25 border-[var(--accent-cyan)]/50 text-[var(--accent-cyan)] hover:bg-[var(--accent-cyan)]/35"
+                  : "bg-black/60 border-white/10 text-gray-400 hover:text-white hover:border-white/20"
+              }`}
+            >
+              <span className={`w-1.5 h-1.5 rounded-full ${detectionOverlaysEnabled ? "bg-[var(--accent-cyan)]" : "bg-gray-500"}`} />
+              {detectionOverlaysEnabled ? "BOXES ON" : "BOXES OFF"}
+            </button>
+          )}
+
+          {/* 3. HUMAN MASK ON / HUMAN MASK OFF */}
+          {onToggleHumanMask && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                if (maskStatus !== "unavailable" && maskStatus !== "loading") onToggleHumanMask();
+              }}
+              disabled={maskStatus === "unavailable" || maskStatus === "loading"}
+              title={
+                maskStatus === "unavailable"
+                  ? "Pretrained instance segmentation model unavailable"
+                  : isHumanMaskEnabled
+                  ? "Click to Hide Human Silhouette Mask"
+                  : "Click to Display Human Silhouette Mask"
+              }
+              className={`px-2.5 py-1 rounded-full text-[10px] font-mono font-bold border transition-all shadow-lg flex items-center gap-1.5 ${
+                maskStatus === "active"
+                  ? "bg-emerald-500/25 border-emerald-500/50 text-emerald-300 hover:bg-emerald-500/35 cursor-pointer"
+                  : maskStatus === "loading"
+                  ? "bg-amber-500/25 border-amber-500/50 text-amber-300 cursor-wait"
+                  : maskStatus === "unavailable"
+                  ? "bg-black/40 border-white/5 text-gray-600 cursor-not-allowed opacity-60"
+                  : "bg-black/60 border-white/10 text-gray-400 hover:text-white hover:border-white/20 cursor-pointer"
+              }`}
+            >
+              <span
+                className={`w-1.5 h-1.5 rounded-full ${
+                  maskStatus === "active"
+                    ? "bg-emerald-400 shadow-[0_0_6px_#34d399]"
+                    : maskStatus === "loading"
+                    ? "bg-amber-400 animate-ping"
+                    : "bg-gray-500"
+                }`}
+              />
+              {maskStatus === "active"
+                ? "HUMAN MASK ON"
+                : maskStatus === "loading"
+                ? "MASK LOADING"
+                : maskStatus === "unavailable"
+                ? "MASK UNAVAILABLE"
+                : "HUMAN MASK OFF"}
+            </button>
+          )}
+
+          {/* 4. OBJECT DETECTION ON / OBJECT DETECTION OFF */}
+          {onToggleObjectDetection && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                onToggleObjectDetection();
+              }}
+              title={isObjectDetectionEnabled ? "Disable Vehicle Detection" : "Enable Vehicle Detection (Cars, Trucks, Bikes, Buses)"}
+              className={`px-2.5 py-1 rounded-full text-[10px] font-mono font-bold border transition-all shadow-lg flex items-center gap-1.5 cursor-pointer ${
+                isObjectDetectionEnabled
+                  ? "bg-blue-500/25 border-blue-500/50 text-blue-300 hover:bg-blue-500/35"
+                  : "bg-black/60 border-white/10 text-gray-400 hover:text-white hover:border-white/20"
+              }`}
+            >
+              <span className={`w-1.5 h-1.5 rounded-full ${isObjectDetectionEnabled ? "bg-blue-400" : "bg-gray-500"}`} />
+              {isObjectDetectionEnabled ? "OBJECT DETECTION ON" : "OBJECT DETECTION OFF"}
+            </button>
+          )}
+
+          {/* Honest AI Metrics Badge (Visible when detection active) */}
+          {trackingStatus === "running" && inferenceFps > 0 && (
+            <div className="hidden lg:flex items-center gap-1 px-2.5 py-1 rounded-full bg-black/75 backdrop-blur-md border border-white/15 text-[10px] font-mono text-gray-300 shadow-lg">
+              <span className="text-emerald-400 font-bold">{inferenceFps.toFixed(1)} AI FPS</span>
+              {meanInferenceMs > 0 && (
+                <span className="text-gray-500 font-medium">· {meanInferenceMs.toFixed(0)}ms</span>
+              )}
+            </div>
           )}
         </div>
 

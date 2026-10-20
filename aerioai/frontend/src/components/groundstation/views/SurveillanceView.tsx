@@ -21,13 +21,9 @@ interface SurveillanceViewProps {
   history: AnalysisRecord[];
   onClearHistory: () => Promise<void>;
   onAskAI?: (record: AnalysisRecord) => void;
+  liveCounts?: { persons: number; vehicles: number; total: number };
+  isTrackingActive?: boolean;
 }
-
-const DEMO_DETECTIONS = [
-  { label: "Persons", count: 0 },
-  { label: "Vehicles", count: 0 },
-  { label: "Buildings", count: 0 },
-];
 
 export default function SurveillanceView({
   isAnalyzing,
@@ -37,7 +33,15 @@ export default function SurveillanceView({
   history,
   onClearHistory,
   onAskAI,
+  liveCounts,
+  isTrackingActive = false,
 }: SurveillanceViewProps) {
+  // Real measured detection categories only — no simulated buildings or hardcoded zeroes
+  const activeDetections = liveCounts && liveCounts.total > 0 ? [
+    ...(liveCounts.persons > 0 ? [{ label: "Person", count: liveCounts.persons }] : []),
+    ...(liveCounts.vehicles > 0 ? [{ label: "Vehicle", count: liveCounts.vehicles }] : []),
+  ] : [];
+
   return (
     <div className="flex flex-col gap-5 w-full">
       {/* ── Top Action & Interval Bar ── */}
@@ -79,13 +83,26 @@ export default function SurveillanceView({
           </div>
         </div>
 
-        {/* Threat & Object Counter Summary */}
+        {/* Real Measured Object Detection Counter Summary */}
         <div className="flex items-center gap-3">
-          <DetectionSummary detections={DEMO_DETECTIONS} />
+          {activeDetections.length > 0 ? (
+            <DetectionSummary detections={activeDetections} />
+          ) : isTrackingActive ? (
+            <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-black/50 border border-emerald-500/20 text-xs font-mono text-emerald-400">
+              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+              <span>AI PERCEPTION: SCANNING</span>
+            </div>
+          ) : (
+            <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-black/40 border border-white/10 text-xs font-mono text-gray-500">
+              <span className="w-1.5 h-1.5 rounded-full bg-gray-500" />
+              <span>AI VISION: IDLE</span>
+            </div>
+          )}
+
           {history.length > 0 && (
             <button
               onClick={onClearHistory}
-              className="px-3 py-1.5 rounded-lg border border-white/10 text-[11px] font-mono text-gray-400 hover:text-[var(--accent-red)] hover:border-red-500/30 transition-all"
+              className="px-3 py-1.5 rounded-lg border border-white/10 text-[11px] font-mono text-gray-400 hover:text-[var(--accent-red)] hover:border-red-500/30 transition-all cursor-pointer"
             >
               CLEAR FEED ({history.length})
             </button>

@@ -286,3 +286,124 @@ export interface WSMessage {
   type: string;
   payload: unknown;
 }
+
+// Search & Rescue Types
+export interface DetectionBBox {
+  x1: number;
+  y1: number;
+  x2: number;
+  y2: number;
+  norm_x: number;
+  norm_y: number;
+  norm_w: number;
+  norm_h: number;
+  mask_polygon?: number[][] | null;
+}
+
+export type SARObservationStatus = "detected" | "tracking" | "stale" | "track_lost" | "unverified";
+export type SARLocationStatus = "unavailable" | "estimated" | "validated";
+export type SARLocationMethod = "direct_calibrated_projection" | "ground_plane_pinhole" | "unavailable" | "simulated_fixture";
+
+export interface SARObservation {
+  observation_id: string;
+  mission_id?: string | null;
+  track_id?: number | null;
+  label: string;
+  detection_confidence: number;
+  bounding_box: DetectionBBox;
+  mask_polygon?: number[][] | null;
+  frame_timestamp: number;
+  first_seen_at: string;
+  last_seen_at: string;
+  observation_status: SARObservationStatus;
+  latitude?: number | null;
+  longitude?: number | null;
+  location_method: SARLocationMethod;
+  location_uncertainty_m?: number | null;
+  location_status: SARLocationStatus;
+  source_type: "actual_camera" | "uploaded_test_image" | "simulated_fixture";
+  telemetry_timestamp?: number | null;
+  notes?: string | null;
+}
+
+export interface SARDetectorStatus {
+  status: "loading" | "ready" | "running" | "unavailable" | "error";
+  model_name: string;
+  model_version: string;
+  classes_tracked: string[];
+  device: string;
+  inference_fps: number;
+  mean_inference_ms: number;
+  is_live_tracking_active: boolean;
+  total_observations_count: number;
+  active_tracks_count: number;
+  error_message?: string | null;
+  mask_status: "off" | "loading" | "active" | "unavailable";
+  is_mask_enabled: boolean;
+  segmentation_model_name?: string | null;
+  is_object_detection_enabled?: boolean;
+}
+
+export interface LiveDetectionItem {
+  label: string;
+  confidence: number;
+  bbox: number[]; // [norm_x, norm_y, norm_w, norm_h]
+  mask_polygon?: number[][] | null;
+  track_id?: number | null;
+}
+
+export interface DetectionCounts {
+  persons: number;
+  vehicles: number;
+  total: number;
+}
+
+export interface LiveDetectionsResponse {
+  detections: LiveDetectionItem[];
+  counts: DetectionCounts;
+  inference_fps: number;
+  mean_inference_ms: number;
+  is_tracking_active: boolean;
+  mask_status: "off" | "loading" | "active" | "unavailable";
+  is_mask_enabled: boolean;
+  is_object_detection_enabled: boolean;
+  timestamp: number;
+}
+
+export interface PolygonCoordinate {
+  lat: number;
+  lon: number;
+}
+
+export interface KMLValidationResponse {
+  is_valid: boolean;
+  message: string;
+  coordinates: PolygonCoordinate[];
+  center: PolygonCoordinate;
+  area_sq_meters: number;
+  perimeter_meters: number;
+  warnings: string[];
+}
+
+export interface RouteWaypoint {
+  order: number;
+  lat: number;
+  lon: number;
+  alt_m: number;
+  waypoint_type: "turn" | "survey_pass" | "entry" | "exit";
+  leg_distance_m: number;
+}
+
+export interface CoverageRouteResponse {
+  is_generated: boolean;
+  message: string;
+  waypoints: RouteWaypoint[];
+  total_distance_m: number;
+  estimated_flight_seconds: number;
+  turn_count: number;
+  swath_width_m: number;
+  track_spacing_m: number;
+  flight_altitude_m: number;
+  warnings: string[];
+  autonomous_flight_enabled: boolean;
+}

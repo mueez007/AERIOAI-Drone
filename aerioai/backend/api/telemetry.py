@@ -11,6 +11,11 @@ router = APIRouter(prefix="/api/telemetry", tags=["Telemetry"])
 fc_service = FlightControllerService()
 
 
+def get_latest_telemetry():
+    """Helper to retrieve current telemetry dictionary for services."""
+    return fc_service.get_telemetry()
+
+
 @router.get("/")
 def get_telemetry(current_user: User = Depends(get_current_user)):
     """Get current telemetry snapshot."""

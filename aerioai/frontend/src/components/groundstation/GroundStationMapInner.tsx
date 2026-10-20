@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
-import { GPSData, AttitudeData } from "@/types/api";
+import { GPSData, AttitudeData, SARObservation, CoverageRouteResponse, PolygonCoordinate } from "@/types/api";
 import { MissionModeId, MapWaypoint, SurvivorTarget } from "./types";
 import api from "@/lib/api";
 
@@ -14,6 +14,11 @@ interface GroundStationMapInnerProps {
   waypoints?: MapWaypoint[];
   onAddWaypoint?: (wp: MapWaypoint) => void;
   survivors?: SurvivorTarget[];
+  sarObservations?: SARObservation[];
+  sarRoute?: CoverageRouteResponse | null;
+  sarPolygon?: PolygonCoordinate[];
+  selectedObservationId?: string | null;
+  onSelectObservation?: (obs: SARObservation) => void;
   className?: string;
   isSimulated?: boolean;
 }
@@ -46,6 +51,11 @@ export default function GroundStationMapInner({
   waypoints = [],
   onAddWaypoint,
   survivors = [],
+  sarObservations = [],
+  sarRoute = null,
+  sarPolygon = [],
+  selectedObservationId = null,
+  onSelectObservation,
   className = "",
   isSimulated = true,
 }: GroundStationMapInnerProps) {
@@ -243,6 +253,21 @@ export default function GroundStationMapInner({
     }
   }, [droneLat, droneLon, droneAlt, droneHeading, autoCenter, hasValidGps, isSimulated]);
 
+  // Center map on selected observation when user clicks observation card
+  useEffect(() => {
+    if (!mapInstanceRef.current || !selectedObservationId) return;
+    const targetObs = sarObservations.find(o => o.observation_id === selectedObservationId);
+    if (
+      targetObs &&
+      typeof targetObs.latitude === "number" &&
+      typeof targetObs.longitude === "number" &&
+      !isNaN(targetObs.latitude) &&
+      !isNaN(targetObs.longitude)
+    ) {
+      mapInstanceRef.current.panTo([targetObs.latitude, targetObs.longitude], { animate: true, duration: 0.8 });
+    }
+  }, [selectedObservationId, sarObservations]);
+
   // Render Mission Mode Overlays (SAR search patterns, Field Boundaries, Inspection asset orbit, etc.)
   useEffect(() => {
     if (!modeLayerGroupRef.current) return;
@@ -273,77 +298,118 @@ export default function GroundStationMapInner({
       perimeter.bindTooltip("SURVEILLANCE SECTOR ALPHA", { permanent: false, direction: "center" });
       group.addLayer(perimeter);
     } else if (missionMode === "search_rescue") {
-      // Search & Rescue: Lawnmower Search Pattern & Survivor Markers
-      const delta = 0.004;
-      const step = delta / 4;
-      const gridPoints: [number, number][] = [];
-      for (let i = 0; i <= 4; i++) {
-        const lat = centerLat - delta / 2 + i * step;
-        if (i % 2 === 0) {
-          gridPoints.push([lat, centerLon - delta]);
-          gridPoints.push([lat, centerLon + delta]);
-        } else {
-          gridPoints.push([lat, centerLon + delta]);
-          gridPoints.push([lat, centerLon - delta]);
-        }
+      // 1. Render Search Perimeter Polygon if imported
+      if (sarPolygon && sarPolygon.length >= 3) {
+        const polyCoords = sarPolygon.map(p => [p.lat, p.lon] as [number, number]);
+        const perimeter = L.polygon(polyCoords, {
+          color: "#ff453a",
+          weight: 2.5,
+          fillColor: "#ff453a",
+          fillOpacity: 0.1,
+          dashArray: "6, 6",
+        });
+        perimeter.bindTooltip("VALIDATED SEARCH PERIMETER", { permanent: false, direction: "center" });
+        group.addLayer(perimeter);
       }
 
-      const searchGrid = L.polyline(gridPoints, {
-        color: "#ff453a",
-        weight: 2.5,
-        opacity: 0.8,
-        dashArray: "5, 5",
-      });
-      searchGrid.bindTooltip("SAR COVERAGE ROUTE (LAWNMOWER)", { permanent: false });
-      group.addLayer(searchGrid);
+      // 2. Render Lawnmower Coverage Route if generated
+      if (sarRoute && sarRoute.waypoints && sarRoute.waypoints.length > 0) {
+        const routeCoords = sarRoute.waypoints.map(w => [w.lat, w.lon] as [number, number]);
+        const routeLine = L.polyline(routeCoords, {
+          color: "#ff3b30",
+          weight: 3,
+          opacity: 0.9,
+        });
+        routeLine.bindTooltip(`LAWNMOWER COVERAGE ROUTE (${sarRoute.total_distance_m.toFixed(0)}m)`, { permanent: false });
+        group.addLayer(routeLine);
 
-      // Survivor location markers
-      const sarTargets: SurvivorTarget[] = survivors.length > 0 ? survivors : [
-        {
-          id: "sar_1",
-          label: "SURVIVOR SIGHTING #1",
-          lat: centerLat + 0.0015,
-          lon: centerLon + 0.002,
-          sightedAt: "10:14 AM",
-          triage: "critical",
-          detectedBy: "Thermal Infrared",
-          confidence: 0.94,
-          notes: "Human heat signature detected beneath tree canopy.",
-        },
-        {
-          id: "sar_2",
-          label: "DEBRIS / DISTRESS BEACON",
-          lat: centerLat - 0.0012,
-          lon: centerLon - 0.0022,
-          sightedAt: "10:22 AM",
-          triage: "moderate",
-          detectedBy: "Visual Optical",
-          confidence: 0.87,
-          notes: "Reflective orange emergency tarp spotted.",
-        },
-      ];
+        // Render Waypoint Markers
+        sarRoute.waypoints.forEach((wp) => {
+          const isKeypoint = wp.order === 1 || wp.order === sarRoute.waypoints.length || wp.order % 4 === 0;
+          if (isKeypoint) {
+            const badgeColor = wp.order === 1 ? "#34c759" : (wp.order === sarRoute.waypoints.length ? "#ff9500" : "#2997ff");
+            const wpIcon = L.divIcon({
+              html: `
+                <div style="background: ${badgeColor}; width: 22px; height: 22px; border-radius: 50%; border: 2px solid white; display: flex; align-items: center; justify-content: center; box-shadow: 0 0 8px ${badgeColor}; font-size: 10px; font-weight: bold; color: white; font-family: monospace;">
+                  ${wp.order}
+                </div>
+              `,
+              className: "sar-wp-marker",
+              iconSize: [22, 22],
+              iconAnchor: [11, 11],
+            });
+            const wpMarker = L.marker([wp.lat, wp.lon], { icon: wpIcon });
+            wpMarker.bindTooltip(`WP ${wp.order}: ${wp.waypoint_type.toUpperCase()} (${wp.alt_m}m)`, { direction: "top" });
+            group.addLayer(wpMarker);
+          }
+        });
+      }
 
-      sarTargets.forEach((target) => {
-        const markerColor = target.triage === "critical" ? "#ff453a" : "#ffd60a";
-        const survivorIcon = L.divIcon({
+      // 3. Render Real Person Observations (Strictly when coordinates are valid)
+      const validObservations = sarObservations.filter(
+        obs => typeof obs.latitude === "number" &&
+               typeof obs.longitude === "number" &&
+               !isNaN(obs.latitude) &&
+               !isNaN(obs.longitude) &&
+               !(obs.latitude === 0 && obs.longitude === 0)
+      );
+
+      validObservations.forEach((obs) => {
+        const isSelected = selectedObservationId === obs.observation_id;
+        const markerColor = obs.observation_status === "tracking" ? "#34c759" : (obs.observation_status === "stale" ? "#ff9f0a" : "#ff453a");
+
+        // Uncertainty Region Circle if uncertainty estimate exists
+        if (typeof obs.location_uncertainty_m === "number" && obs.location_uncertainty_m > 0) {
+          const uncertaintyCircle = L.circle([obs.latitude!, obs.longitude!], {
+            radius: obs.location_uncertainty_m,
+            color: markerColor,
+            fillColor: markerColor,
+            fillOpacity: isSelected ? 0.25 : 0.12,
+            weight: isSelected ? 2 : 1,
+            dashArray: "4, 4",
+          });
+          uncertaintyCircle.bindTooltip(`Uncertainty: ±${obs.location_uncertainty_m.toFixed(1)}m`, { direction: "bottom" });
+          group.addLayer(uncertaintyCircle);
+        }
+
+        // Person Marker
+        const haloHtml = isSelected
+          ? `<div style="position: absolute; inset: -8px; border-radius: 50%; border: 2px solid #ffffff; box-shadow: 0 0 16px #ffffff; animation: pulse 1.5s infinite;"></div>`
+          : "";
+
+        const personIcon = L.divIcon({
           html: `
-            <div style="background: ${markerColor}; width: 28px; height: 28px; border-radius: 50%; border: 2px solid white; display: flex; align-items: center; justify-content: center; box-shadow: 0 0 12px ${markerColor};">
-              <span style="font-size: 14px; font-weight: bold; color: white;">!</span>
+            <div style="position: relative; width: 32px; height: 32px; display: flex; align-items: center; justify-content: center;">
+              ${haloHtml}
+              <div style="background: ${markerColor}; width: 28px; height: 28px; border-radius: 50%; border: 2px solid white; display: flex; align-items: center; justify-content: center; box-shadow: 0 0 12px ${markerColor};">
+                <span style="font-size: 14px; font-weight: bold; color: white;">👤</span>
+              </div>
             </div>
           `,
-          className: "sar-survivor-icon",
-          iconSize: [28, 28],
-          iconAnchor: [14, 14],
+          className: "sar-person-icon",
+          iconSize: [32, 32],
+          iconAnchor: [16, 16],
         });
 
-        const targetMarker = L.marker([target.lat, target.lon], { icon: survivorIcon });
+        const targetMarker = L.marker([obs.latitude!, obs.longitude!], { icon: personIcon });
+
+        targetMarker.on("click", () => {
+          onSelectObservation?.(obs);
+        });
+
         targetMarker.bindPopup(`
-          <div style="font-family: sans-serif; font-size: 12px; color: #111;">
-            <b style="color: ${markerColor}; font-size: 13px;">${target.label}</b><br/>
-            <b>Triage:</b> <span style="text-transform: uppercase; font-weight: bold;">${target.triage}</span><br/>
-            <b>Sensor:</b> ${target.detectedBy} (${Math.round(target.confidence * 100)}%)<br/>
-            <b>Time:</b> ${target.sightedAt}<br/>
-            <p style="margin-top: 4px; font-size: 11px;">${target.notes}</p>
+          <div style="font-family: sans-serif; font-size: 12px; color: #111; min-width: 180px;">
+            <b style="color: ${markerColor}; font-size: 13px;">${obs.label}</b>
+            <span style="font-size: 10px; font-family: monospace; color: #666; display: block;">ID: ${obs.observation_id}</span>
+            <div style="margin: 6px 0; border-top: 1px solid #ddd; padding-top: 4px;">
+              <b>Status:</b> <span style="text-transform: uppercase; font-weight: bold; color: ${markerColor};">${obs.observation_status}</span><br/>
+              <b>Confidence:</b> ${(obs.detection_confidence * 100).toFixed(0)}%<br/>
+              <b>GPS:</b> ${obs.latitude!.toFixed(6)}N, ${obs.longitude!.toFixed(6)}E<br/>
+              ${obs.location_uncertainty_m ? `<b>Accuracy:</b> ±${obs.location_uncertainty_m.toFixed(1)}m<br/>` : ""}
+              <b>Method:</b> ${obs.location_method}<br/>
+              <b>Last Seen:</b> ${obs.last_seen_at}<br/>
+            </div>
+            ${obs.notes ? `<p style="margin-top: 4px; font-size: 11px; color: #444;">${obs.notes}</p>` : ""}
           </div>
         `);
         group.addLayer(targetMarker);

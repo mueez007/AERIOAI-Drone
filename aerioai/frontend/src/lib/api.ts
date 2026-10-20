@@ -1,4 +1,12 @@
 import { API_BASE_URL } from "./constants";
+import {
+  SARObservation,
+  SARDetectorStatus,
+  LiveDetectionsResponse,
+  KMLValidationResponse,
+  CoverageRouteResponse,
+  PolygonCoordinate,
+} from "@/types/api";
 
 interface RequestOptions {
   method?: string;
@@ -343,6 +351,88 @@ class ApiClient {
 
   async getAuditLogs(skip = 0, limit = 50) {
     return this.request(`/api/system/audit-logs?skip=${skip}&limit=${limit}`);
+  }
+
+  // --- Search & Rescue (SAR) ---
+  async getSARStatus(): Promise<SARDetectorStatus> {
+    return this.request("/api/sar/status");
+  }
+
+  async toggleSARLiveTracking(action: "start" | "stop", cadenceHz = 3.0): Promise<{ status: string }> {
+    return this.request(`/api/sar/status/live-tracking?action=${action}&cadence_hz=${cadenceHz}`, {
+      method: "POST",
+    });
+  }
+
+  async toggleSARMask(action: "on" | "off"): Promise<{ is_mask_enabled: boolean; mask_status: string; segmentation_model?: string | null }> {
+    return this.request(`/api/sar/status/mask?action=${action}`, {
+      method: "POST",
+    });
+  }
+
+  async toggleSARObjectDetection(action: "on" | "off"): Promise<{ is_object_detection_enabled: boolean; classes_tracked: string[] }> {
+    return this.request(`/api/sar/status/object-detection?action=${action}`, {
+      method: "POST",
+    });
+  }
+
+  async getLiveDetections(): Promise<LiveDetectionsResponse> {
+    return this.request("/api/sar/detections/live");
+  }
+
+  async getSARObservations(): Promise<SARObservation[]> {
+    return this.request("/api/sar/observations");
+  }
+
+  async clearSARObservations(): Promise<{ message: string }> {
+    return this.request("/api/sar/observations", {
+      method: "DELETE",
+    });
+  }
+
+  async runSARDetect(file?: File, confThreshold = 0.25, useTelemetry = true): Promise<SARObservation[]> {
+    const formData = new FormData();
+    if (file) {
+      formData.append("file", file);
+    }
+    formData.append("conf_threshold", confThreshold.toString());
+    formData.append("use_telemetry", useTelemetry.toString());
+
+    return this.request("/api/sar/detect", {
+      method: "POST",
+      body: formData,
+      isFormData: true,
+    });
+  }
+
+  async validateKML(file?: File, rawContent?: string): Promise<KMLValidationResponse> {
+    const formData = new FormData();
+    if (file) {
+      formData.append("file", file);
+    }
+    if (rawContent) {
+      formData.append("raw_content", rawContent);
+    }
+
+    return this.request("/api/sar/kml/validate", {
+      method: "POST",
+      body: formData,
+      isFormData: true,
+    });
+  }
+
+  async generateCoverageRoute(payload: {
+    polygon: PolygonCoordinate[];
+    track_spacing_m?: number;
+    flight_altitude_m?: number;
+    sweep_angle_deg?: number;
+    boundary_margin_m?: number;
+    drone_speed_mps?: number;
+  }): Promise<CoverageRouteResponse> {
+    return this.request("/api/sar/routes/generate", {
+      method: "POST",
+      body: payload,
+    });
   }
 }
 

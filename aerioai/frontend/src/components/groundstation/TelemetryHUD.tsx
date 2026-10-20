@@ -57,16 +57,12 @@ export default function TelemetryHUD({
             <span className="px-2.5 py-0.5 rounded-full bg-emerald-500/15 border border-emerald-500/30 text-emerald-400 font-bold text-[10px] tracking-wider">
               HARDWARE — INAV/MSP
             </span>
-          ) : isStale ? (
-            <span className="px-2.5 py-0.5 rounded-full bg-amber-500/15 border border-amber-500/30 text-amber-400 font-bold text-[10px] tracking-wider">
-              STALE TELEMETRY
-            </span>
           ) : !isConnected ? (
             <span className="px-2.5 py-0.5 rounded-full bg-red-500/15 border border-red-500/30 text-red-400 font-bold text-[10px] tracking-wider">
               DISCONNECTED
             </span>
           ) : (
-            <span className="px-2.5 py-0.5 rounded-full bg-amber-500/15 border border-amber-500/30 text-amber-400 font-bold text-[10px] tracking-wider">
+            <span className="px-2.5 py-0.5 rounded-full bg-cyan-500/15 border border-cyan-500/30 text-cyan-300 font-bold text-[10px] tracking-wider">
               SIMULATED TELEMETRY
             </span>
           )}

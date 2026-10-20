@@ -18,7 +18,7 @@ from contextlib import asynccontextmanager
 
 from config import settings
 from core.database import init_db
-from api import auth, camera, telemetry, mission, chat, system
+from api import auth, camera, telemetry, mission, chat, system, sar
 
 
 @asynccontextmanager
@@ -81,6 +81,7 @@ app.include_router(telemetry.router)
 app.include_router(mission.router)
 app.include_router(chat.router)
 app.include_router(system.router)
+app.include_router(sar.router)
 
 # Serve media files statically
 app.mount("/media", StaticFiles(directory=_MEDIA_PATH), name="media")

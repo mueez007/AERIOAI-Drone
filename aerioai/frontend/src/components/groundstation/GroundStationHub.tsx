@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useCallback, useEffect } from "react";
-import LiveFeedCanvas from "@/components/dashboard/LiveFeedCanvas";
+import LiveFeedCanvas, { Detection } from "@/components/dashboard/LiveFeedCanvas";
 import EmergencyAI from "@/components/dashboard/EmergencyAI";
 import { useCamera } from "@/hooks/useCamera";
 import { useTelemetry } from "@/hooks/useTelemetry";
@@ -15,6 +15,7 @@ import MissionCopilot from "./MissionCopilot";
 
 import { MissionModeId, GroundStationView, SessionMediaItem, MapWaypoint } from "./types";
 import { MISSION_MODES } from "./missionModes";
+import { SARObservation, CoverageRouteResponse, PolygonCoordinate, SARDetectorStatus } from "@/types/api";
 
 import SurveillanceView, { AnalysisRecord } from "./views/SurveillanceView";
 import SearchRescueView from "./views/SearchRescueView";
@@ -31,11 +32,35 @@ export default function GroundStationHub() {
   const [activeView, setActiveView] = useState<GroundStationView>("mission");
   const [isModeSelectorOpen, setIsModeSelectorOpen] = useState(false);
 
+  // Search & Rescue Geospatial & Observation Store
+  const [sarObservations, setSarObservations] = useState<SARObservation[]>([]);
+  const [selectedSarObservationId, setSelectedSarObservationId] = useState<string | null>(null);
+  const [sarPolygon, setSarPolygon] = useState<PolygonCoordinate[]>([]);
+  const [sarRoute, setSarRoute] = useState<CoverageRouteResponse | null>(null);
+  const [sarDetectorStatus, setSarDetectorStatus] = useState<SARDetectorStatus | null>(null);
+
+  // Shared Vision Pipeline & Detection State (Surveillance + Search & Rescue)
+  const [isLiveTracking, setIsLiveTracking] = useState(false);
+  const [trackingStatus, setTrackingStatus] = useState<"loading" | "ready" | "running" | "unavailable" | "error" | "stopping" | "stopped">("stopped");
+  const [isHumanMaskEnabled, setIsHumanMaskEnabled] = useState(false);
+  const [maskStatus, setMaskStatus] = useState<"off" | "loading" | "active" | "unavailable">("off");
+  const [isObjectDetectionEnabled, setIsObjectDetectionEnabled] = useState(false);
+  const [detectionOverlaysEnabled, setDetectionOverlaysEnabled] = useState(true);
+
+  // Fast live detections cache for responsive HUD rendering
+  const [liveDetections, setLiveDetections] = useState<Detection[]>([]);
+  const [liveCounts, setLiveCounts] = useState<{ persons: number; vehicles: number; total: number }>({ persons: 0, vehicles: 0, total: 0 });
+  const [inferenceFps, setInferenceFps] = useState(0);
+  const [meanInferenceMs, setMeanInferenceMs] = useState(0);
+
+  const [isTogglingTracking, setIsTogglingTracking] = useState(false);
+  const [isTogglingMask, setIsTogglingMask] = useState(false);
+  const [isTogglingObjects, setIsTogglingObjects] = useState(false);
+
   // Camera & Capture State
   const [captureFlash, setCaptureFlash] = useState(false);
   const [isCapturing, setIsCapturing] = useState(false);
   const [sessionMedia, setSessionMedia] = useState<SessionMediaItem[]>([]);
-  const [detectionOverlaysEnabled, setDetectionOverlaysEnabled] = useState(true);
 
   // Map State (Shared across all views)
   const [waypoints, setWaypoints] = useState<MapWaypoint[]>([
@@ -50,6 +75,128 @@ export default function GroundStationHub() {
   const [analysisInterval, setAnalysisInterval] = useState<number | null>(null);
 
   const activeModeConfig = MISSION_MODES[activeMode];
+
+  // 1. Fast polling of live detections (~150ms) when vision pipeline is active
+  useEffect(() => {
+    if (!isLiveTracking) {
+      setLiveDetections([]);
+      setLiveCounts({ persons: 0, vehicles: 0, total: 0 });
+      return;
+    }
+
+    let isMounted = true;
+    const fetchLive = async () => {
+      try {
+        const res = await api.getLiveDetections();
+        if (!isMounted) return;
+        setInferenceFps(res.inference_fps || 0);
+        setMeanInferenceMs(res.mean_inference_ms || 0);
+        setLiveCounts(res.counts || { persons: 0, vehicles: 0, total: 0 });
+        setIsObjectDetectionEnabled(res.is_object_detection_enabled ?? false);
+
+        const formatted: Detection[] = (res.detections || []).map((d) => ({
+          label: d.label,
+          confidence: d.confidence,
+          bbox: d.bbox as [number, number, number, number],
+          mask_polygon: d.mask_polygon,
+          track_id: d.track_id,
+        }));
+        setLiveDetections(formatted);
+      } catch {
+        // silent polling catch
+      }
+    };
+
+    fetchLive();
+    const timer = setInterval(fetchLive, 150);
+    return () => {
+      isMounted = false;
+      clearInterval(timer);
+    };
+  }, [isLiveTracking]);
+
+  // 2. Periodic detector status & SAR observations sync (1500ms)
+  const syncDetectorStatus = useCallback(async () => {
+    try {
+      const status = await api.getSARStatus();
+      setSarDetectorStatus(status);
+      setIsLiveTracking(status.is_live_tracking_active);
+      setIsHumanMaskEnabled(status.is_mask_enabled ?? false);
+      setMaskStatus(status.mask_status ?? "off");
+      setIsObjectDetectionEnabled(status.is_object_detection_enabled ?? false);
+      setTrackingStatus(
+        status.is_live_tracking_active
+          ? "running"
+          : status.status === "error"
+          ? "error"
+          : status.status === "loading"
+          ? "loading"
+          : "stopped"
+      );
+
+      if (activeMode === "search_rescue") {
+        const obsList = await api.getSARObservations();
+        setSarObservations(obsList);
+      }
+    } catch (err) {
+      console.warn("[Vision Hub] Status sync warning:", err);
+    }
+  }, [activeMode]);
+
+  useEffect(() => {
+    syncDetectorStatus();
+    const timer = setInterval(syncDetectorStatus, 1500);
+    return () => clearInterval(timer);
+  }, [syncDetectorStatus]);
+
+  // 1. START DETECTION / STOP DETECTION Toggle
+  const handleToggleTracking = useCallback(async () => {
+    if (isTogglingTracking) return;
+    setIsTogglingTracking(true);
+    const nextAction = isLiveTracking ? "stop" : "start";
+    setTrackingStatus(nextAction === "start" ? "loading" : "stopping");
+    try {
+      await api.toggleSARLiveTracking(nextAction, 3.0);
+      await syncDetectorStatus();
+    } catch (err) {
+      console.error("[Vision Hub] Toggle tracking failed:", err);
+      setTrackingStatus("error");
+    } finally {
+      setIsTogglingTracking(false);
+    }
+  }, [isTogglingTracking, isLiveTracking, syncDetectorStatus]);
+
+  // 2. HUMAN MASK ON / HUMAN MASK OFF Toggle
+  const handleToggleMask = useCallback(async () => {
+    if (isTogglingMask) return;
+    setIsTogglingMask(true);
+    const nextAction = isHumanMaskEnabled ? "off" : "on";
+    setMaskStatus("loading");
+    try {
+      await api.toggleSARMask(nextAction);
+      await syncDetectorStatus();
+    } catch (err) {
+      console.error("[Vision Hub] Toggle mask failed:", err);
+      setMaskStatus("unavailable");
+    } finally {
+      setIsTogglingMask(false);
+    }
+  }, [isTogglingMask, isHumanMaskEnabled, syncDetectorStatus]);
+
+  // 3. OBJECT DETECTION ON / OBJECT DETECTION OFF Toggle (Road Vehicles)
+  const handleToggleObjectDetection = useCallback(async () => {
+    if (isTogglingObjects) return;
+    setIsTogglingObjects(true);
+    const nextAction = isObjectDetectionEnabled ? "off" : "on";
+    try {
+      await api.toggleSARObjectDetection(nextAction);
+      await syncDetectorStatus();
+    } catch (err) {
+      console.error("[Vision Hub] Toggle object detection failed:", err);
+    } finally {
+      setIsTogglingObjects(false);
+    }
+  }, [isTogglingObjects, isObjectDetectionEnabled, syncDetectorStatus]);
 
   // Handle Explicit Photo Capture
   const handleCapture = useCallback(async () => {
@@ -249,6 +396,7 @@ export default function GroundStationHub() {
                   <LiveFeedCanvas
                     streamUrl={getStreamUrl()}
                     isRecording={isRecording}
+                    detections={liveDetections}
                     altitude={telemetry?.altitude ?? gps?.alt ?? (isSimulated ? 50.0 : null)}
                     altitudeType="REL (HOME)"
                     speed={telemetry?.ground_speed ?? gps?.speed ?? (isSimulated ? 5.2 : null)}
@@ -262,6 +410,17 @@ export default function GroundStationHub() {
                     telemetrySource={telemetrySource}
                     detectionOverlaysEnabled={detectionOverlaysEnabled}
                     onToggleDetectionOverlays={() => setDetectionOverlaysEnabled(!detectionOverlaysEnabled)}
+                    missionMode={activeMode}
+                    isLiveTracking={isLiveTracking}
+                    trackingStatus={trackingStatus}
+                    onToggleLiveTracking={handleToggleTracking}
+                    isHumanMaskEnabled={isHumanMaskEnabled}
+                    maskStatus={maskStatus}
+                    onToggleHumanMask={handleToggleMask}
+                    isObjectDetectionEnabled={isObjectDetectionEnabled}
+                    onToggleObjectDetection={handleToggleObjectDetection}
+                    inferenceFps={inferenceFps}
+                    meanInferenceMs={meanInferenceMs}
                   />
                 </div>
               </div>
@@ -275,6 +434,11 @@ export default function GroundStationHub() {
                   waypoints={waypoints}
                   onAddWaypoint={handleAddWaypoint}
                   isSimulated={isSimulated}
+                  sarObservations={sarObservations}
+                  sarRoute={sarRoute}
+                  sarPolygon={sarPolygon}
+                  selectedObservationId={selectedSarObservationId}
+                  onSelectObservation={(obs) => setSelectedSarObservationId(obs.observation_id)}
                   className="h-full"
                 />
               </div>
@@ -305,11 +469,25 @@ export default function GroundStationHub() {
                     onSetInterval={setAnalysisInterval}
                     history={analysisHistory}
                     onClearHistory={handleClearHistory}
+                    liveCounts={liveCounts}
+                    isTrackingActive={isLiveTracking}
                   />
                 )}
 
                 {activeMode === "search_rescue" && (
-                  <SearchRescueView />
+                  <SearchRescueView
+                    observations={sarObservations}
+                    selectedObservationId={selectedSarObservationId}
+                    onSelectObservation={(obs) => setSelectedSarObservationId(obs.observation_id)}
+                    onPolygonValidated={(coords) => setSarPolygon(coords)}
+                    onRouteGenerated={(route) => setSarRoute(route)}
+                    detectorStatus={sarDetectorStatus}
+                    isLiveTracking={isLiveTracking}
+                    onToggleLiveTracking={handleToggleTracking}
+                    isHumanMaskEnabled={isHumanMaskEnabled}
+                    maskStatus={maskStatus}
+                    onToggleHumanMask={handleToggleMask}
+                  />
                 )}
 
                 {activeMode === "agriculture" && (
@@ -344,6 +522,7 @@ export default function GroundStationHub() {
               <LiveFeedCanvas
                 streamUrl={getStreamUrl()}
                 isRecording={isRecording}
+                detections={liveDetections}
                 altitude={telemetry?.altitude ?? gps?.alt ?? (isSimulated ? 50.0 : null)}
                 altitudeType="REL (HOME)"
                 speed={telemetry?.ground_speed ?? gps?.speed ?? (isSimulated ? 5.2 : null)}
@@ -357,6 +536,17 @@ export default function GroundStationHub() {
                 telemetrySource={telemetrySource}
                 detectionOverlaysEnabled={detectionOverlaysEnabled}
                 onToggleDetectionOverlays={() => setDetectionOverlaysEnabled(!detectionOverlaysEnabled)}
+                missionMode={activeMode}
+                isLiveTracking={isLiveTracking}
+                trackingStatus={trackingStatus}
+                onToggleLiveTracking={handleToggleTracking}
+                isHumanMaskEnabled={isHumanMaskEnabled}
+                maskStatus={maskStatus}
+                onToggleHumanMask={handleToggleMask}
+                isObjectDetectionEnabled={isObjectDetectionEnabled}
+                onToggleObjectDetection={handleToggleObjectDetection}
+                inferenceFps={inferenceFps}
+                meanInferenceMs={meanInferenceMs}
               />
             </div>
 
@@ -383,9 +573,25 @@ export default function GroundStationHub() {
                     onSetInterval={setAnalysisInterval}
                     history={analysisHistory}
                     onClearHistory={handleClearHistory}
+                    liveCounts={liveCounts}
+                    isTrackingActive={isLiveTracking}
                   />
                 )}
-                {activeMode === "search_rescue" && <SearchRescueView />}
+                {activeMode === "search_rescue" && (
+                  <SearchRescueView
+                    observations={sarObservations}
+                    selectedObservationId={selectedSarObservationId}
+                    onSelectObservation={(obs) => setSelectedSarObservationId(obs.observation_id)}
+                    onPolygonValidated={(coords) => setSarPolygon(coords)}
+                    onRouteGenerated={(route) => setSarRoute(route)}
+                    detectorStatus={sarDetectorStatus}
+                    isLiveTracking={isLiveTracking}
+                    onToggleLiveTracking={handleToggleTracking}
+                    isHumanMaskEnabled={isHumanMaskEnabled}
+                    maskStatus={maskStatus}
+                    onToggleHumanMask={handleToggleMask}
+                  />
+                )}
                 {activeMode === "agriculture" && <AgricultureView />}
                 {activeMode === "inspection" && <InspectionView />}
               </div>
@@ -408,6 +614,11 @@ export default function GroundStationHub() {
                 waypoints={waypoints}
                 onAddWaypoint={handleAddWaypoint}
                 isSimulated={!isConnected || telemetry?.flight_mode === "MOCK"}
+                sarObservations={sarObservations}
+                sarRoute={sarRoute}
+                sarPolygon={sarPolygon}
+                selectedObservationId={selectedSarObservationId}
+                onSelectObservation={(obs) => setSelectedSarObservationId(obs.observation_id)}
                 className="h-full"
               />
             </div>
@@ -434,7 +645,15 @@ export default function GroundStationHub() {
                     onClearHistory={handleClearHistory}
                   />
                 )}
-                {activeMode === "search_rescue" && <SearchRescueView />}
+                {activeMode === "search_rescue" && (
+                  <SearchRescueView
+                    observations={sarObservations}
+                    selectedObservationId={selectedSarObservationId}
+                    onSelectObservation={(obs) => setSelectedSarObservationId(obs.observation_id)}
+                    onPolygonValidated={(coords) => setSarPolygon(coords)}
+                    onRouteGenerated={(route) => setSarRoute(route)}
+                  />
+                )}
                 {activeMode === "agriculture" && <AgricultureView />}
                 {activeMode === "inspection" && <InspectionView />}
               </div>

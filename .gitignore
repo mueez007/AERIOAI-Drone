@@ -63,3 +63,10 @@ Thumbs.db
 # Root media storage
 media/
 
+
+# Model weights
+*.pt
+*.onnx
+*.engine
+*.weights
+
