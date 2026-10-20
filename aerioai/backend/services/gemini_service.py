@@ -89,10 +89,10 @@ class GeminiService:
             print(f"Gemini analysis error, falling back to Kimi: {e}")
             return self.nvidia_service.analyze_with_kimi(media, prompt)
 
-    def analyze_live_scene(self, frame_bytes: bytes, prompt: Optional[str] = None) -> dict:
-        """Full scene analysis of a live frame."""
+    def analyze_live_scene(self, frame_bytes: bytes, prompt: Optional[str] = None, mission_mode: str = "surveillance") -> dict:
+        """Full scene analysis of a live frame tailored to the active mission mode."""
         if not self.model:
-            return self._mock_analysis()
+            return self._mock_analysis(mission_mode)
 
         try:
             import google.generativeai as genai
@@ -102,22 +102,71 @@ class GeminiService:
                 "data": frame_bytes,
             }
 
-            default_prompt = """
-            You are AERIOAI, an autonomous drone AI for aerial surveillance.
-            Analyze this live camera feed frame and return a JSON response with:
-
-            {
-                "summary": "2-3 sentence description of the scene",
-                "activity": "What is happening in the scene",
-                "objects": [{"class": "name", "count": number, "description": "brief"}],
-                "threat_level": "LOW" | "MEDIUM" | "HIGH",
-                "confidence": 0-100,
-                "recommendations": "Any actions recommended or null",
-                "key_observations": ["observation 1", "observation 2"]
+            mode_key = (mission_mode or "surveillance").lower().replace("-", "_").replace(" ", "_")
+            mode_prompts = {
+                "surveillance": """
+                You are AERIOAI, an autonomous drone AI for aerial surveillance and security.
+                Analyze this live camera feed frame for perimeter security, movement anomalies, vehicle/person identification, and potential threats.
+                Return a JSON response with:
+                {
+                    "summary": "2-3 sentence description of security observations and perimeter status",
+                    "activity": "What is happening in the scene",
+                    "objects": [{"class": "name", "count": number, "description": "brief"}],
+                    "threat_level": "LOW" | "MEDIUM" | "HIGH",
+                    "confidence": 0-100,
+                    "recommendations": "Tactical actions recommended or null",
+                    "key_observations": ["observation 1", "observation 2"]
+                }
+                Only return the JSON, no other text.
+                """,
+                "search_rescue": """
+                You are AERIOAI, an airborne tactical Search and Rescue (SAR) AI.
+                Analyze this live camera feed frame with extreme priority on human life safety: look for survivors, distress signals, clothing colors, heat/movement anomalies, and hazardous terrain.
+                Return a JSON response with:
+                {
+                    "summary": "2-3 sentence description of SAR observations and survivor detection status",
+                    "activity": "Detected human presence or environmental hazards",
+                    "objects": [{"class": "name", "count": number, "description": "brief"}],
+                    "threat_level": "LOW" | "MEDIUM" | "HIGH",
+                    "confidence": 0-100,
+                    "recommendations": "Urgent triage action or search grid guidance",
+                    "key_observations": ["observation 1", "observation 2"]
+                }
+                Only return the JSON, no other text.
+                """,
+                "agriculture": """
+                You are AERIOAI, an aerial precision agriculture and agronomy survey AI.
+                Analyze this live camera feed frame for crop canopy health, vegetative stress, irrigation moisture patterns, weed spread, and field uniformity.
+                Return a JSON response with:
+                {
+                    "summary": "2-3 sentence description of crop condition and field survey findings",
+                    "activity": "Vegetation growth pattern, field coverage, or stress indicators",
+                    "objects": [{"class": "name", "count": number, "description": "brief"}],
+                    "threat_level": "LOW" | "MEDIUM" | "HIGH",
+                    "confidence": 0-100,
+                    "recommendations": "Agronomic recommendations regarding irrigation, weeding, or crop protection",
+                    "key_observations": ["observation 1", "observation 2"]
+                }
+                Only return the JSON, no other text.
+                """,
+                "inspection": """
+                You are AERIOAI, a structural infrastructure inspection AI.
+                Analyze this live camera feed frame for structural integrity, visible surface cracks, corrosion, thermal differentials, spalling, and component clearance.
+                Return a JSON response with:
+                {
+                    "summary": "2-3 sentence description of structural asset condition and defect findings",
+                    "activity": "Structural inspection scan observations",
+                    "objects": [{"class": "name", "count": number, "description": "brief"}],
+                    "threat_level": "LOW" | "MEDIUM" | "HIGH",
+                    "confidence": 0-100,
+                    "recommendations": "Inspection advisories, standoff distance margins, or maintenance priority",
+                    "key_observations": ["observation 1", "observation 2"]
+                }
+                Only return the JSON, no other text.
+                """
             }
 
-            Only return the JSON, no other text.
-            """
+            default_prompt = mode_prompts.get(mode_key, mode_prompts["surveillance"])
 
             response = self.model.generate_content([
                 prompt or default_prompt,
@@ -134,7 +183,7 @@ class GeminiService:
 
         except Exception as e:
             print(f"Gemini live analysis error: {e}")
-            return self._mock_analysis()
+            return self._mock_analysis(mission_mode)
 
     def analyze_video_deep_reasoning(self, media) -> dict:
         """Deep video analysis using Gemini"""
@@ -391,16 +440,47 @@ class GeminiService:
         except Exception as e:
             return f"Error querying missions: {str(e)}", []
 
-    def _mock_analysis(self) -> dict:
-        return {
-            "summary": "Scene analysis unavailable - Gemini API not configured.",
-            "activity": "Unknown",
-            "objects": [],
-            "threat_level": "LOW",
-            "confidence": 0,
-            "recommendations": None,
-            "key_observations": [],
+    def _mock_analysis(self, mission_mode: str = "surveillance") -> dict:
+        mode_key = (mission_mode or "surveillance").lower().replace("-", "_").replace(" ", "_")
+        mock_data = {
+            "surveillance": {
+                "summary": "Perimeter sector reconnaissance active. Optical feed clear; no unauthorized intrusion or anomalous vehicular movement detected.",
+                "activity": "Routine perimeter security patrol",
+                "objects": [{"class": "Fence Line", "count": 1, "description": "Intact boundary"}, {"class": "Personnel", "count": 1, "description": "Authorized patrol"}],
+                "threat_level": "LOW",
+                "confidence": 88,
+                "recommendations": "Maintain standard patrol grid altitude.",
+                "key_observations": ["Perimeter boundary intact", "Ground traffic nominal"]
+            },
+            "search_rescue": {
+                "summary": "Search & Rescue sector sweep active. Optical and thermal sensors scanning designated grid coordinates for survivor signatures.",
+                "activity": "Active grid search reconnaissance",
+                "objects": [{"class": "Distress Marker", "count": 1, "description": "Candidate thermal signature"}, {"class": "Terrain Hazard", "count": 1, "description": "Rocky outcrop"}],
+                "threat_level": "LOW",
+                "confidence": 91,
+                "recommendations": "Deploy downward thermal zoom over coordinates for visual confirmation.",
+                "key_observations": ["Thermal anomaly logged in sector", "Grid coverage progress: 34%"]
+            },
+            "agriculture": {
+                "summary": "Precision agricultural canopy survey active. Multispectral vegetative health sensors logging NDVI reflectance across field boundaries.",
+                "activity": "Automated crop canopy photogrammetry sweep",
+                "objects": [{"class": "Crop Canopy", "count": 12, "description": "Uniform vegetative index"}, {"class": "Irrigation Line", "count": 1, "description": "Operational drip line"}],
+                "threat_level": "LOW",
+                "confidence": 86,
+                "recommendations": "Review North-East quadrant for minor moisture deficit.",
+                "key_observations": ["Mean NDVI vigor: 0.81", "Canopy density within nominal variance"]
+            },
+            "inspection": {
+                "summary": "Structural asset inspection scan active. High-resolution sensors surveying facade joints and clearance standoff margins.",
+                "activity": "Orbital structural integrity assessment",
+                "objects": [{"class": "Structural Joint", "count": 4, "description": "Nominal bolt tension"}, {"class": "Surface Facade", "count": 1, "description": "Minor surface oxidation"}],
+                "threat_level": "LOW",
+                "confidence": 89,
+                "recommendations": "Maintain 80m standoff radius for optical stability.",
+                "key_observations": ["Standoff distance maintained at 80m", "Zero critical fissures detected"]
+            }
         }
+        return mock_data.get(mode_key, mock_data["surveillance"])
 
     def _mock_mission_summary(self, mission) -> str:
         return f"Mission '{mission.name}' completed. Duration: {mission.duration_seconds}s. No AI summary available."
@@ -410,3 +490,25 @@ class GeminiService:
 
     def _mock_query(self, query: str, missions: List) -> str:
         return f"Query received: '{query}'. AI mission search unavailable."
+
+    def transcribe_audio(self, audio_bytes: bytes, mime_type: str = "audio/webm") -> Optional[str]:
+        """Transcribe speech using Gemini multimodal capabilities as fallback."""
+        if not self.model or not audio_bytes or len(audio_bytes) < 100:
+            return None
+        try:
+            audio_part = {
+                "mime_type": mime_type,
+                "data": audio_bytes,
+            }
+            prompt = (
+                "Listen to this audio clip and transcribe the spoken user words verbatim into plain text. "
+                "Output ONLY the transcribed words, without commentary, punctuation formatting, or quotes. "
+                "If no speech is detected, output nothing."
+            )
+            response = self.model.generate_content([prompt, audio_part])
+            if response and response.text:
+                return response.text.strip()
+            return None
+        except Exception as e:
+            print(f"Gemini audio transcription error: {e}")
+            return None

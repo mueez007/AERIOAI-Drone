@@ -9,6 +9,9 @@ interface TelemetryHUDProps {
   battery: BatteryData | null;
   droneStatus?: DroneStatus | null;
   isConnected: boolean;
+  isStale?: boolean;
+  isSimulated?: boolean;
+  telemetrySource?: string;
   className?: string;
 }
 
@@ -19,15 +22,17 @@ export default function TelemetryHUD({
   battery,
   droneStatus,
   isConnected,
+  isStale = false,
+  isSimulated = true,
+  telemetrySource = "SIMULATED",
   className = "",
 }: TelemetryHUDProps) {
-  // Determine if telemetry is simulated or hardware
-  // When running locally on macOS without SpeedyBee FC attached, FC_MODE is mock
-  const isHardwareFC = isConnected && telemetry?.flight_mode !== "MOCK" && telemetry?.satellites !== undefined && telemetry.satellites > 0;
+  const isHardwareFC = isConnected && !isSimulated && telemetrySource === "HARDWARE — INAV/MSP";
   
-  const altitude = telemetry?.altitude ?? gps?.alt ?? 0;
+  const rawAltitude = telemetry?.altitude ?? gps?.alt ?? null;
+  const altitude = rawAltitude !== null ? rawAltitude : (isSimulated ? 50.0 : 0);
   const speed = telemetry?.ground_speed ?? gps?.speed ?? 0;
-  const heading = attitude?.heading ?? gps?.heading ?? telemetry?.heading ?? 0;
+  
   const roll = attitude?.roll ?? telemetry?.roll ?? 0;
   const pitch = attitude?.pitch ?? telemetry?.pitch ?? 0;
   const batteryPct = battery?.percentage ?? telemetry?.battery_percent ?? 0;
@@ -38,29 +43,33 @@ export default function TelemetryHUD({
   const armed = droneStatus?.armed ?? telemetry?.armed ?? false;
 
   return (
-    <div className={`w-full bg-black/60 backdrop-blur-2xl border border-white/10 rounded-2xl p-4 shadow-xl flex flex-col gap-3 font-mono text-[var(--text-primary)] ${className}`}>
-      {/* Top Status Banner with Clear Hardware vs. Simulated labeling */}
-      <div className="flex flex-wrap items-center justify-between gap-2 pb-2.5 border-b border-white/10 text-xs">
-        <div className="flex items-center gap-2.5">
+    <div className={`w-full bg-black/60 backdrop-blur-2xl border border-white/10 rounded-2xl p-3.5 shadow-xl flex flex-col gap-2.5 font-mono text-[var(--text-primary)] ${className}`}>
+      {/* Top Status Bar: Truthful Hardware vs. Simulated labeling */}
+      <div className="flex flex-wrap items-center justify-between gap-2 pb-2 border-b border-white/10 text-xs">
+        <div className="flex items-center gap-2">
           <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-black/60 border border-white/10">
-            <span className={`w-2 h-2 rounded-full ${isConnected ? "bg-[var(--accent-green)] animate-pulse" : "bg-[var(--accent-red)]"}`} />
-            <span className="font-bold text-[11px]">{isConnected ? "LINK CONNECTED" : "NO LINK"}</span>
+            <span className={`w-2 h-2 rounded-full ${isConnected ? (isStale ? "bg-amber-400" : "bg-[var(--accent-green)] animate-pulse") : "bg-[var(--accent-red)]"}`} />
+            <span className="font-bold text-[11px]">{isConnected ? (isStale ? "LINK STALE" : "LINK ACTIVE") : "DISCONNECTED"}</span>
           </div>
 
-          {/* CRITICAL SAFETY BADGE: Explicitly distinguish Hardware vs Simulated */}
+          {/* Provenance Badge */}
           {isHardwareFC ? (
-            <span className="px-2.5 py-1 rounded-full bg-emerald-500/15 border border-emerald-500/30 text-emerald-400 font-bold text-[10px] tracking-wider">
-              [HARDWARE INAV/MSP]
+            <span className="px-2.5 py-0.5 rounded-full bg-emerald-500/15 border border-emerald-500/30 text-emerald-400 font-bold text-[10px] tracking-wider">
+              HARDWARE — INAV/MSP
+            </span>
+          ) : isStale ? (
+            <span className="px-2.5 py-0.5 rounded-full bg-amber-500/15 border border-amber-500/30 text-amber-400 font-bold text-[10px] tracking-wider">
+              STALE TELEMETRY
+            </span>
+          ) : !isConnected ? (
+            <span className="px-2.5 py-0.5 rounded-full bg-red-500/15 border border-red-500/30 text-red-400 font-bold text-[10px] tracking-wider">
+              DISCONNECTED
             </span>
           ) : (
-            <span className="px-2.5 py-1 rounded-full bg-amber-500/15 border border-amber-500/30 text-amber-400 font-bold text-[10px] tracking-wider">
-              [SIMULATED TELEMETRY]
+            <span className="px-2.5 py-0.5 rounded-full bg-amber-500/15 border border-amber-500/30 text-amber-400 font-bold text-[10px] tracking-wider">
+              SIMULATED TELEMETRY
             </span>
           )}
-
-          <span className="px-2.5 py-1 rounded-full bg-blue-500/10 border border-blue-500/20 text-blue-400 font-bold text-[10px] tracking-wider">
-            [SIMULATED VIDEO STREAM]
-          </span>
         </div>
 
         <div className="flex items-center gap-2 text-xs">
@@ -76,40 +85,45 @@ export default function TelemetryHUD({
         </div>
       </div>
 
-      {/* Primary Telemetry Metrics Gauges */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
-        {/* Altitude */}
-        <div className="p-3 rounded-xl bg-white/[0.03] border border-white/5 flex flex-col justify-between">
-          <span className="text-[10px] text-[var(--text-muted)] tracking-widest uppercase">ALTITUDE</span>
+      {/* 5 Essential Primary Telemetry Metrics (Compass integrated into Live Video HUD) */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2.5 items-stretch">
+        {/* 1. Altitude */}
+        <div className="p-2.5 rounded-xl bg-white/[0.03] border border-white/5 flex flex-col justify-between">
+          <div className="flex items-center justify-between">
+            <span className="text-[10px] text-[var(--text-muted)] tracking-widest uppercase font-bold">ALTITUDE</span>
+            {isSimulated && <span className="text-[8px] text-amber-400 bg-amber-500/15 px-1 py-0.2 rounded">SIM</span>}
+          </div>
           <div className="flex items-baseline gap-1 mt-1">
-            <span className="text-xl sm:text-2xl font-bold text-[var(--accent-cyan)]">{altitude.toFixed(1)}</span>
+            <span className="text-xl sm:text-2xl font-bold text-[var(--accent-cyan)]">
+              {rawAltitude !== null ? altitude.toFixed(1) : (isSimulated ? "50.0" : "---")}
+            </span>
             <span className="text-xs text-[var(--text-muted)]">m</span>
           </div>
-          <span className="text-[10px] text-gray-500 mt-1">MSL / AGL</span>
+          <span className="text-[9px] text-gray-500 mt-0.5">REL (HOME)</span>
         </div>
 
-        {/* Speed */}
-        <div className="p-3 rounded-xl bg-white/[0.03] border border-white/5 flex flex-col justify-between">
-          <span className="text-[10px] text-[var(--text-muted)] tracking-widest uppercase">SPEED</span>
+        {/* 2. Speed */}
+        <div className="p-2.5 rounded-xl bg-white/[0.03] border border-white/5 flex flex-col justify-between">
+          <span className="text-[10px] text-[var(--text-muted)] tracking-widest uppercase font-bold">SPEED</span>
           <div className="flex items-baseline gap-1 mt-1">
             <span className="text-xl sm:text-2xl font-bold text-[var(--text-primary)]">{(speed * 3.6).toFixed(1)}</span>
             <span className="text-xs text-[var(--text-muted)]">km/h</span>
           </div>
-          <span className="text-[10px] text-gray-500 mt-1">{speed.toFixed(1)} m/s GS</span>
+          <span className="text-[9px] text-gray-500 mt-0.5">{speed.toFixed(1)} m/s GS</span>
         </div>
 
-        {/* Battery */}
-        <div className="p-3 rounded-xl bg-white/[0.03] border border-white/5 flex flex-col justify-between">
-          <span className="text-[10px] text-[var(--text-muted)] tracking-widest uppercase">BATTERY</span>
+        {/* 3. Battery */}
+        <div className="p-2.5 rounded-xl bg-white/[0.03] border border-white/5 flex flex-col justify-between">
+          <span className="text-[10px] text-[var(--text-muted)] tracking-widest uppercase font-bold">BATTERY</span>
           <div className="flex items-baseline gap-1 mt-1">
             <span className={`text-xl sm:text-2xl font-bold ${
               batteryPct > 30 ? "text-[var(--accent-green)]" : "text-[var(--accent-red)] animate-pulse"
             }`}>
               {Math.round(batteryPct)}%
             </span>
-            <span className="text-xs text-[var(--text-muted)]">{cells}S • {batteryVolt.toFixed(1)}V</span>
+            <span className="text-[10px] text-[var(--text-muted)]">{cells}S • {batteryVolt.toFixed(1)}V</span>
           </div>
-          <div className="w-full bg-white/10 h-1.5 rounded-full overflow-hidden mt-2">
+          <div className="w-full bg-white/10 h-1 rounded-full overflow-hidden mt-1.5">
             <div
               className={`h-full rounded-full transition-all duration-500 ${
                 batteryPct > 40 ? "bg-[var(--accent-green)]" : batteryPct > 20 ? "bg-[var(--accent-yellow)]" : "bg-[var(--accent-red)]"
@@ -119,24 +133,14 @@ export default function TelemetryHUD({
           </div>
         </div>
 
-        {/* Heading & Compass */}
-        <div className="p-3 rounded-xl bg-white/[0.03] border border-white/5 flex flex-col justify-between">
-          <span className="text-[10px] text-[var(--text-muted)] tracking-widest uppercase">HEADING</span>
-          <div className="flex items-baseline gap-1 mt-1">
-            <span className="text-xl sm:text-2xl font-bold text-[var(--accent-purple)]">{Math.round(heading)}°</span>
-            <span className="text-xs text-[var(--text-muted)]">{getHeadingCardinal(heading)}</span>
-          </div>
-          <span className="text-[10px] text-gray-500 mt-1">MAG COMPASS</span>
-        </div>
-
-        {/* Attitude (Roll & Pitch) */}
-        <div className="p-3 rounded-xl bg-white/[0.03] border border-white/5 flex flex-col justify-between">
-          <span className="text-[10px] text-[var(--text-muted)] tracking-widest uppercase">ATTITUDE</span>
+        {/* 4. Attitude */}
+        <div className="p-2.5 rounded-xl bg-white/[0.03] border border-white/5 flex flex-col justify-between">
+          <span className="text-[10px] text-[var(--text-muted)] tracking-widest uppercase font-bold">ATTITUDE</span>
           <div className="flex items-center justify-between text-xs mt-1">
             <span>R: <b className="text-[var(--accent-cyan)]">{roll.toFixed(1)}°</b></span>
             <span>P: <b className="text-[var(--accent-cyan)]">{pitch.toFixed(1)}°</b></span>
           </div>
-          <div className="flex items-center gap-1.5 mt-2">
+          <div className="flex items-center gap-1.5 mt-1.5">
             <div className="flex-1 bg-white/10 h-1 rounded-full overflow-hidden">
               <div
                 className="bg-[var(--accent-cyan)] h-full transition-all"
@@ -146,30 +150,23 @@ export default function TelemetryHUD({
           </div>
         </div>
 
-        {/* GPS Fix & Satellites */}
-        <div className="p-3 rounded-xl bg-white/[0.03] border border-white/5 flex flex-col justify-between">
-          <span className="text-[10px] text-[var(--text-muted)] tracking-widest uppercase">GPS SAT LOCK</span>
+        {/* 5. GPS Sat Lock */}
+        <div className="p-2.5 rounded-xl bg-white/[0.03] border border-white/5 flex flex-col justify-between">
+          <div className="flex items-center justify-between">
+            <span className="text-[10px] text-[var(--text-muted)] tracking-widest uppercase font-bold">GPS LOCK</span>
+            {isSimulated && <span className="text-[8px] text-amber-400 bg-amber-500/15 px-1 py-0.2 rounded">SIM</span>}
+          </div>
           <div className="flex items-baseline gap-1 mt-1">
             <span className="text-xl sm:text-2xl font-bold text-[var(--text-primary)]">{sats}</span>
-            <span className="text-xs text-[var(--accent-green)]">3D FIX</span>
+            <span className={`text-[10px] font-bold ${sats >= 4 ? "text-[var(--accent-green)]" : "text-amber-400"}`}>
+              {sats >= 4 ? "3D FIX" : "NO FIX"}
+            </span>
           </div>
-          <span className="text-[10px] text-gray-500 mt-1 truncate">
-            {gps ? `${gps.lat.toFixed(4)}N, ${gps.lon.toFixed(4)}E` : "Awaiting Lock"}
+          <span className="text-[9px] text-gray-500 mt-0.5 truncate">
+            {gps && typeof gps.lat === "number" && gps.lat !== 0 ? `${gps.lat.toFixed(3)}N, ${gps.lon.toFixed(3)}E` : "Awaiting Lock"}
           </span>
         </div>
       </div>
     </div>
   );
-}
-
-function getHeadingCardinal(deg: number): string {
-  const normalized = ((deg % 360) + 360) % 360;
-  if (normalized >= 337.5 || normalized < 22.5) return "N";
-  if (normalized >= 22.5 && normalized < 67.5) return "NE";
-  if (normalized >= 67.5 && normalized < 112.5) return "E";
-  if (normalized >= 112.5 && normalized < 157.5) return "SE";
-  if (normalized >= 157.5 && normalized < 202.5) return "S";
-  if (normalized >= 202.5 && normalized < 247.5) return "SW";
-  if (normalized >= 247.5 && normalized < 292.5) return "W";
-  return "NW";
 }

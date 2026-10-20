@@ -74,6 +74,12 @@ def get_system_status(current_user: User = Depends(get_current_user)):
     }
 
 
+@router.get("/trajectory")
+def get_trajectory(current_user: User = Depends(get_current_user)):
+    """Get flight path trajectory points with source metadata."""
+    return fc_service.get_trajectory()
+
+
 @router.websocket("/ws")
 async def telemetry_websocket(websocket: WebSocket):
     """WebSocket for real-time telemetry streaming."""

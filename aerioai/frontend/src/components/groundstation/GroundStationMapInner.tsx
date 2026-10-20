@@ -5,6 +5,7 @@ import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import { GPSData, AttitudeData } from "@/types/api";
 import { MissionModeId, MapWaypoint, SurvivorTarget } from "./types";
+import api from "@/lib/api";
 
 interface GroundStationMapInnerProps {
   gps: GPSData | null;
@@ -61,11 +62,42 @@ export default function GroundStationMapInner({
   const [autoCenter, setAutoCenter] = useState(true);
   const [cursorCoords, setCursorCoords] = useState<{ lat: number; lon: number } | null>(null);
 
-  // Default coordinate (Bangalore Aerospace Park or drone location)
-  const droneLat = gps?.lat && !isNaN(gps.lat) && gps.lat !== 0 ? gps.lat : 13.0827;
-  const droneLon = gps?.lon && !isNaN(gps.lon) && gps.lon !== 0 ? gps.lon : 77.5877;
+  // Validate GPS position truthfulness
+  const hasValidGps = Boolean(
+    gps &&
+    typeof gps.lat === "number" &&
+    typeof gps.lon === "number" &&
+    !isNaN(gps.lat) &&
+    !isNaN(gps.lon) &&
+    !(gps.lat === 0 && gps.lon === 0) &&
+    (gps.satellites ?? 0) >= 4
+  );
+
+  // If GPS is genuinely valid, use it. If simulated mode is active, use simulated coordinates.
+  // Otherwise, default to center datum without claiming it is the drone.
+  const droneLat = hasValidGps ? gps!.lat : (isSimulated && gps?.lat && gps.lat !== 0 ? gps.lat : 13.0827);
+  const droneLon = hasValidGps ? gps!.lon : (isSimulated && gps?.lon && gps.lon !== 0 ? gps.lon : 77.5877);
   const droneAlt = gps?.alt ?? 0;
   const droneHeading = attitude?.heading ?? gps?.heading ?? 0;
+
+  // Fetch server trajectory history on mount
+  useEffect(() => {
+    api.getTrajectory().then((res) => {
+      if (res && res.points && res.points.length > 0) {
+        const points = res.points
+          .filter(p => p.lat && p.lon && !(p.lat === 0 && p.lon === 0))
+          .map(p => [p.lat, p.lon] as [number, number]);
+        if (points.length > 0) {
+          setBreadcrumbs(points);
+          if (breadcrumbPolylineRef.current) {
+            breadcrumbPolylineRef.current.setLatLngs(points);
+          }
+        }
+      }
+    }).catch((err) => {
+      console.warn("Telemetry trajectory fetch error:", err);
+    });
+  }, []);
 
   // Initialize Map
   useEffect(() => {
@@ -88,12 +120,12 @@ export default function GroundStationMapInner({
 
     tileLayerRef.current = tileLayer;
 
-    // Breadcrumbs polyline
+    // Breadcrumbs polyline (Cyan for hardware, Amber for simulated)
     const polyline = L.polyline([], {
-      color: "#2997ff",
+      color: isSimulated ? "#ff9f0a" : "#2997ff",
       weight: 3,
       opacity: 0.85,
-      dashArray: "6, 8",
+      dashArray: isSimulated ? "6, 8" : undefined,
     }).addTo(map);
     breadcrumbPolylineRef.current = polyline;
 
@@ -140,17 +172,26 @@ export default function GroundStationMapInner({
     if (!mapInstanceRef.current) return;
     const map = mapInstanceRef.current;
 
+    // If hardware is not simulated and GPS is invalid, do not plot fake location
+    if (!hasValidGps && !isSimulated) {
+      if (droneMarkerRef.current) {
+        map.removeLayer(droneMarkerRef.current);
+        droneMarkerRef.current = null;
+      }
+      return;
+    }
+
+    const markerColor = isSimulated ? "#ff9f0a" : "#2997ff";
     const droneIconHtml = `
-      <div style="position: relative; width: 44px; height: 44px; display: flex; items-center; justify-content: center;">
+      <div style="position: relative; width: 44px; height: 44px; display: flex; align-items: center; justify-content: center;">
         <!-- Pulsing radar wave -->
-        <div style="position: absolute; inset: 0; border-radius: 50%; background: rgba(41, 151, 255, 0.25); animation: ping 2s cubic-bezier(0, 0, 0.2, 1) infinite;"></div>
+        <div style="position: absolute; inset: 0; border-radius: 50%; background: ${isSimulated ? 'rgba(255, 159, 10, 0.25)' : 'rgba(41, 151, 255, 0.25)'}; animation: ping 2s cubic-bezier(0, 0, 0.2, 1) infinite;"></div>
         <!-- Outer Halo -->
-        <div style="position: absolute; inset: 4px; border-radius: 50%; background: rgba(10, 10, 15, 0.85); border: 2px solid #2997ff; box-shadow: 0 0 16px rgba(41, 151, 255, 0.7); display: flex; align-items: center; justify-content: center;">
+        <div style="position: absolute; inset: 4px; border-radius: 50%; background: rgba(10, 10, 15, 0.85); border: 2px solid ${markerColor}; box-shadow: 0 0 16px ${markerColor}; display: flex; align-items: center; justify-content: center;">
           <!-- Heading Arrow -->
           <div style="transform: rotate(${droneHeading}deg); transition: transform 0.3s ease; display: flex; align-items: center; justify-content: center; width: 20px; height: 20px;">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
-              <path d="M12 2L19 21L12 17L5 21L12 2 Teil" fill="#2997ff" />
-              <polygon points="12 2 19 21 12 17 5 21" fill="#2997ff" stroke="#ffffff" stroke-width="1.5" stroke-linejoin="round"/>
+              <polygon points="12 2 19 21 12 17 5 21" fill="${markerColor}" stroke="#ffffff" stroke-width="1.5" stroke-linejoin="round"/>
             </svg>
           </div>
         </div>
@@ -164,9 +205,13 @@ export default function GroundStationMapInner({
       iconAnchor: [22, 22],
     });
 
+    const tooltipLabel = isSimulated
+      ? `<b>AERIO-1 [SIMULATED]</b><br/>Alt: ${droneAlt.toFixed(1)}m<br/>Hdg: ${Math.round(droneHeading)}°`
+      : `<b>AERIO-1 [LIVE FC]</b><br/>Alt: ${droneAlt.toFixed(1)}m<br/>Hdg: ${Math.round(droneHeading)}°`;
+
     if (!droneMarkerRef.current) {
       const marker = L.marker([droneLat, droneLon], { icon: droneIcon }).addTo(map);
-      marker.bindTooltip(`<b>AERIO-1</b><br/>Alt: ${droneAlt.toFixed(1)}m<br/>Hdg: ${Math.round(droneHeading)}°`, {
+      marker.bindTooltip(tooltipLabel, {
         direction: "top",
         offset: [0, -20],
         className: "drone-marker-tooltip",
@@ -175,28 +220,28 @@ export default function GroundStationMapInner({
     } else {
       droneMarkerRef.current.setLatLng([droneLat, droneLon]);
       droneMarkerRef.current.setIcon(droneIcon);
-      droneMarkerRef.current.setTooltipContent(
-        `<b>AERIO-1</b><br/>Alt: ${droneAlt.toFixed(1)}m<br/>Hdg: ${Math.round(droneHeading)}°`
-      );
+      droneMarkerRef.current.setTooltipContent(tooltipLabel);
     }
 
-    // Append to breadcrumbs
-    setBreadcrumbs((prev) => {
-      const last = prev[prev.length - 1];
-      if (!last || Math.abs(last[0] - droneLat) > 0.00005 || Math.abs(last[1] - droneLon) > 0.00005) {
-        const next = [...prev, [droneLat, droneLon] as [number, number]].slice(-300);
-        if (breadcrumbPolylineRef.current) {
-          breadcrumbPolylineRef.current.setLatLngs(next);
+    // Only append valid position updates to breadcrumbs
+    if (hasValidGps || isSimulated) {
+      setBreadcrumbs((prev) => {
+        const last = prev[prev.length - 1];
+        if (!last || Math.abs(last[0] - droneLat) > 0.00005 || Math.abs(last[1] - droneLon) > 0.00005) {
+          const next = [...prev, [droneLat, droneLon] as [number, number]].slice(-300);
+          if (breadcrumbPolylineRef.current) {
+            breadcrumbPolylineRef.current.setLatLngs(next);
+          }
+          return next;
         }
-        return next;
-      }
-      return prev;
-    });
+        return prev;
+      });
+    }
 
     if (autoCenter) {
       map.panTo([droneLat, droneLon], { animate: true, duration: 0.5 });
     }
-  }, [droneLat, droneLon, droneAlt, droneHeading, autoCenter]);
+  }, [droneLat, droneLon, droneAlt, droneHeading, autoCenter, hasValidGps, isSimulated]);
 
   // Render Mission Mode Overlays (SAR search patterns, Field Boundaries, Inspection asset orbit, etc.)
   useEffect(() => {
@@ -410,19 +455,39 @@ export default function GroundStationMapInner({
 
       {/* Top Floating Telemetry & Mode Badge */}
       <div className="absolute top-4 left-4 z-[400] flex flex-wrap items-center gap-2 pointer-events-auto">
-        <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-black/75 backdrop-blur-xl border border-white/10 text-xs font-mono shadow-xl">
-          <span className="w-2 h-2 rounded-full bg-[#2997ff] animate-pulse" />
-          <span className="text-[var(--text-primary)] font-bold">DRONE GPS:</span>
-          <span className="text-[var(--accent-cyan)]">{droneLat.toFixed(5)}°, {droneLon.toFixed(5)}°</span>
-          <span className="text-[var(--text-muted)]">|</span>
-          <span className="text-[var(--text-primary)]">{droneAlt.toFixed(1)}m ALT</span>
-        </div>
-
-        {isSimulated && (
-          <div className="px-2.5 py-1 rounded-full bg-amber-500/15 border border-amber-500/30 text-amber-400 font-mono text-[10px] font-bold tracking-wider">
-            SIMULATED GPS
+        {hasValidGps ? (
+          <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-black/75 backdrop-blur-xl border border-white/10 text-xs font-mono shadow-xl">
+            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+            <span className="text-[var(--text-primary)] font-bold">DRONE GPS:</span>
+            <span className="text-[var(--accent-cyan)]">{droneLat.toFixed(5)}°, {droneLon.toFixed(5)}°</span>
+            <span className="text-[var(--text-muted)]">|</span>
+            <span className="text-[var(--text-primary)]">{droneAlt.toFixed(1)}m ALT</span>
+          </div>
+        ) : isSimulated ? (
+          <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-black/75 backdrop-blur-xl border border-amber-500/30 text-xs font-mono shadow-xl">
+            <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse" />
+            <span className="text-amber-400 font-bold">SIMULATED POSITION:</span>
+            <span className="text-amber-200">{droneLat.toFixed(5)}°, {droneLon.toFixed(5)}°</span>
+            <span className="text-white/30">|</span>
+            <span className="text-amber-400">{droneAlt.toFixed(1)}m</span>
+          </div>
+        ) : (
+          <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-red-950/80 backdrop-blur-xl border border-red-500/40 text-xs font-mono shadow-xl">
+            <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
+            <span className="text-red-400 font-bold">NO GPS FIX</span>
+            <span className="text-red-200 text-[10px]">Awaiting 3D Satellite Lock (Sats: {gps?.satellites ?? 0})</span>
           </div>
         )}
+
+        {isSimulated ? (
+          <div className="px-2.5 py-1 rounded-full bg-amber-500/15 border border-amber-500/30 text-amber-400 font-mono text-[10px] font-bold tracking-wider">
+            [SIMULATED MAP TRACK]
+          </div>
+        ) : hasValidGps ? (
+          <div className="px-2.5 py-1 rounded-full bg-emerald-500/15 border border-emerald-500/30 text-emerald-400 font-mono text-[10px] font-bold tracking-wider">
+            [LIVE HARDWARE TRACK]
+          </div>
+        ) : null}
       </div>
 
       {/* Top Right Map Layer & Tool Controls */}

@@ -24,7 +24,7 @@ import InspectionView from "./views/InspectionView";
 export default function GroundStationHub() {
   // Shared Camera & Telemetry Services
   const { isRecording, capturePhoto, startRecording, stopRecording, getStreamUrl } = useCamera();
-  const { telemetry, gps, attitude, battery, droneStatus, isConnected } = useTelemetry();
+  const { telemetry, gps, attitude, battery, droneStatus, isConnected, isStale, isSimulated, telemetrySource } = useTelemetry();
 
   // State: Mission Mode & Operational View
   const [activeMode, setActiveMode] = useState<MissionModeId>("surveillance");
@@ -249,25 +249,20 @@ export default function GroundStationHub() {
                   <LiveFeedCanvas
                     streamUrl={getStreamUrl()}
                     isRecording={isRecording}
+                    altitude={telemetry?.altitude ?? gps?.alt ?? (isSimulated ? 50.0 : null)}
+                    altitudeType="REL (HOME)"
+                    speed={telemetry?.ground_speed ?? gps?.speed ?? (isSimulated ? 5.2 : null)}
+                    heading={attitude?.heading ?? gps?.heading ?? telemetry?.heading ?? (isSimulated ? 180 : null)}
+                    attitude={attitude}
+                    satellites={gps?.satellites ?? telemetry?.satellites ?? (isSimulated ? 12 : 0)}
+                    batteryPct={battery?.percentage ?? telemetry?.battery_percent ?? (isSimulated ? 85 : null)}
+                    isConnected={isConnected}
+                    isSimulated={isSimulated}
+                    isStale={isStale}
+                    telemetrySource={telemetrySource}
+                    detectionOverlaysEnabled={detectionOverlaysEnabled}
+                    onToggleDetectionOverlays={() => setDetectionOverlaysEnabled(!detectionOverlaysEnabled)}
                   />
-
-                  {/* Top Feed Overlay */}
-                  <div className="absolute top-3 left-3 z-10 flex items-center gap-2">
-                    <span className="px-2.5 py-1 rounded-full bg-black/70 backdrop-blur-md border border-white/10 text-[10px] font-mono font-bold text-white flex items-center gap-1.5">
-                      <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
-                      LIVE FEED
-                    </span>
-                    <button
-                      onClick={() => setDetectionOverlaysEnabled(!detectionOverlaysEnabled)}
-                      className={`px-2.5 py-1 rounded-full text-[10px] font-mono font-bold border transition-all ${
-                        detectionOverlaysEnabled
-                          ? "bg-[var(--accent-cyan)]/20 border-[var(--accent-cyan)]/40 text-[var(--accent-cyan)]"
-                          : "bg-black/60 border-white/10 text-gray-400"
-                      }`}
-                    >
-                      AI BOXES: {detectionOverlaysEnabled ? "ON" : "OFF"}
-                    </button>
-                  </div>
                 </div>
               </div>
 
@@ -279,7 +274,7 @@ export default function GroundStationHub() {
                   missionMode={activeMode}
                   waypoints={waypoints}
                   onAddWaypoint={handleAddWaypoint}
-                  isSimulated={!isConnected || telemetry?.flight_mode === "MOCK"}
+                  isSimulated={isSimulated}
                   className="h-full"
                 />
               </div>
@@ -293,6 +288,9 @@ export default function GroundStationHub() {
               battery={battery}
               droneStatus={droneStatus}
               isConnected={isConnected}
+              isStale={isStale}
+              isSimulated={isSimulated}
+              telemetrySource={telemetrySource}
             />
 
             {/* Mode-Specific Operations Panel + AI Copilot */}
@@ -346,6 +344,19 @@ export default function GroundStationHub() {
               <LiveFeedCanvas
                 streamUrl={getStreamUrl()}
                 isRecording={isRecording}
+                altitude={telemetry?.altitude ?? gps?.alt ?? (isSimulated ? 50.0 : null)}
+                altitudeType="REL (HOME)"
+                speed={telemetry?.ground_speed ?? gps?.speed ?? (isSimulated ? 5.2 : null)}
+                heading={attitude?.heading ?? gps?.heading ?? telemetry?.heading ?? (isSimulated ? 180 : null)}
+                attitude={attitude}
+                satellites={gps?.satellites ?? telemetry?.satellites ?? (isSimulated ? 12 : 0)}
+                batteryPct={battery?.percentage ?? telemetry?.battery_percent ?? (isSimulated ? 85 : null)}
+                isConnected={isConnected}
+                isSimulated={isSimulated}
+                isStale={isStale}
+                telemetrySource={telemetrySource}
+                detectionOverlaysEnabled={detectionOverlaysEnabled}
+                onToggleDetectionOverlays={() => setDetectionOverlaysEnabled(!detectionOverlaysEnabled)}
               />
             </div>
 
@@ -356,6 +367,9 @@ export default function GroundStationHub() {
               battery={battery}
               droneStatus={droneStatus}
               isConnected={isConnected}
+              isStale={isStale}
+              isSimulated={isSimulated}
+              telemetrySource={telemetrySource}
             />
 
             {/* Mode-specific actions */}

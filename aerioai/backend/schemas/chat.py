@@ -10,6 +10,7 @@ class ChatRequest(BaseModel):
     generate_audio: Optional[bool] = False
     session_id: Optional[str] = None
     context: Optional[str] = "ai_chat"
+    mission_mode: Optional[str] = "surveillance"
 
 
 class ChatResponse(BaseModel):
@@ -20,12 +21,14 @@ class ChatResponse(BaseModel):
     audio_url: Optional[str] = None
     session_id: Optional[str] = None
     context: Optional[str] = "ai_chat"
+    mission_mode: Optional[str] = "surveillance"
 
 
 class VoiceCommandResponse(BaseModel):
     transcribed_text: str
     ai_response: str
     audio_url: Optional[str] = None
+    mission_mode: Optional[str] = "surveillance"
 
 
 class SceneAnalysisRequest(BaseModel):
@@ -33,6 +36,7 @@ class SceneAnalysisRequest(BaseModel):
     prompt: Optional[str] = None
     live_stream: Optional[bool] = False
     analysis_type: Optional[str] = "normal"
+    mission_mode: Optional[str] = "surveillance"
 
 
 class SceneAnalysisResponse(BaseModel):

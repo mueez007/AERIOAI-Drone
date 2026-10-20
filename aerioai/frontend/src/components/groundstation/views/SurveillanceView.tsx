@@ -97,12 +97,9 @@ export default function SurveillanceView({
       <div className="p-5 rounded-2xl bg-white/[0.02] border border-white/10 flex flex-col gap-4">
         <div className="flex items-center justify-between border-b border-white/10 pb-3">
           <div>
-            <h4 className="text-sm font-bold text-[var(--text-primary)]">Threat Assessment & Perception Feed</h4>
-            <p className="text-xs text-[var(--text-muted)] font-mono">YOLOv8 Edge Object Classes + Gemini 2.5 Contextual Inference</p>
+            <h4 className="text-sm font-bold text-[var(--text-primary)]">Perception & Threat Assessment</h4>
+            <p className="text-xs text-[var(--text-muted)] font-mono">Real-time aerial object classification and anomaly feed</p>
           </div>
-          <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-[var(--accent-cyan)]/15 text-[var(--accent-cyan)] border border-[var(--accent-cyan)]/25">
-            SURVEILLANCE PROFILE ACTIVE
-          </span>
         </div>
 
         <div className="max-h-[360px] overflow-y-auto space-y-3 pr-1 custom-scrollbar">
