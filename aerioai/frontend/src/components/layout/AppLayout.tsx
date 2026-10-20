@@ -38,7 +38,7 @@ function AppLayoutInner({ children }: { children: React.ReactNode }) {
         {/* Center: Navigation Links */}
         <nav className="flex items-center gap-1 sm:gap-2 absolute left-1/2 -translate-x-1/2">
           {NAV_ITEMS.map((item) => {
-            const isActive = pathname === item.path || (item.path !== "/" && pathname.startsWith(item.path));
+            const isActive = pathname === item.path || ((item.path as string) !== "/" && pathname.startsWith(item.path));
             return (
               <Link
                 key={item.path}

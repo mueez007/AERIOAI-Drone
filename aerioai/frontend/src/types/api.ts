@@ -59,6 +59,8 @@ export interface ObjectDetection {
   confidence: number;
 }
 
+export type Media = MediaItem;
+
 export interface MediaListResponse {
   total: number;
   photos: MediaItem[];
@@ -125,6 +127,7 @@ export interface BatteryData {
   current: number;
   mah_used: number;
   cell_count: number;
+  cells?: number;
 }
 
 export interface DroneStatus {

@@ -37,9 +37,9 @@ export default function ChatBubble({ role, content, timestamp }: Props) {
             remarkPlugins={[remarkGfm]}
             components={{
               img: ({ node, ...props }) => {
-                const src = props.src?.startsWith('/') ? `${API_BASE_URL}${props.src}` : props.src;
+                const src = typeof props.src === "string" && props.src.startsWith('/') ? `${API_BASE_URL}${props.src}` : props.src;
                 return (
-                  <img {...props} src={src} className="max-w-full max-h-64 object-contain rounded-lg my-2 cursor-pointer hover:opacity-90 transition-opacity shadow-md" onClick={() => window.open(src as string, '_blank')} />
+                  <img {...props} src={src} className="max-w-full max-h-64 object-contain rounded-lg my-2 cursor-pointer hover:opacity-90 transition-opacity shadow-md" onClick={() => typeof src === "string" && window.open(src, '_blank')} />
                 );
               },
               a: ({ node, ...props }) => {

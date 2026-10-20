@@ -111,15 +111,30 @@ export default function LoginPage() {
                   Authenticating...
                 </>
               ) : (
-                "Authenticate"
+                "Authenticate & Enter Ground Station"
               )}
             </button>
           </form>
+
+          {/* Quick Demo Credentials Autofill */}
+          <div className="mt-4 pt-4 border-t border-[var(--border-color)] flex items-center justify-between text-xs font-mono">
+            <span className="text-[var(--text-muted)]">Default: <b>admin</b> / <b>admin123</b></span>
+            <button
+              type="button"
+              onClick={() => {
+                setUsername("admin");
+                setPassword("admin123");
+              }}
+              className="text-[var(--accent-cyan)] font-bold hover:underline"
+            >
+              Auto-fill
+            </button>
+          </div>
         </div>
 
-        <div className="text-center mt-12">
+        <div className="text-center mt-8">
           <p className="text-xs font-mono text-[var(--text-muted)]">
-            AERIOAI OS v2.0.4 <br /> Secure connection established.
+            AERIOAI Multi-Mission Ground Control Station • v2.0
           </p>
         </div>
       </div>

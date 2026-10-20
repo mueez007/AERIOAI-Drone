@@ -67,7 +67,7 @@ export const THREAT_COLORS = {
 // Navigation items
 export const NAV_ITEMS = [
   {
-    label: "Live Stream",
+    label: "Ground Station",
     path: "/dashboard",
     icon: "camera",
   },

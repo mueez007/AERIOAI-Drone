@@ -41,7 +41,7 @@ class ApiClient {
     return this.token;
   }
 
-  async request<T>(endpoint: string, options: RequestOptions = {}): Promise<T> {
+  async request<T = any>(endpoint: string, options: RequestOptions = {}): Promise<T> {
     const { method = "GET", body, headers = {}, isFormData = false } = options;
 
     const requestHeaders: Record<string, string> = {
@@ -152,6 +152,22 @@ class ApiClient {
     return this.request(`/api/camera/${mediaId}`, { method: "DELETE" });
   }
 
+  async getMedia(missionId?: string): Promise<any[]> {
+    const [photosRes, videosRes] = await Promise.all([
+      this.getPhotos(missionId).catch(() => ({ photos: [] })),
+      this.getVideos(missionId).catch(() => ({ videos: [] })),
+    ]);
+    const photos = (photosRes as any)?.photos || [];
+    const videos = (videosRes as any)?.videos || [];
+    return [...photos, ...videos].sort(
+      (a: any, b: any) => new Date(b.created_at || b.captured_at).getTime() - new Date(a.created_at || a.captured_at).getTime()
+    );
+  }
+
+  async analyzeMedia(mediaId: string): Promise<any> {
+    return this.analyzeScene(mediaId);
+  }
+
   getStreamUrl(): string {
     return `${this.baseUrl}/api/camera/stream`;
   }
@@ -203,9 +219,6 @@ class ApiClient {
     return this.request(`/api/missions?${params}`);
   }
 
-  async getLiveAnalysisHistory(sessionId: string = 'live_stream') {
-    return this.request(`/api/chat/live-analysis-logs?session_id=${sessionId}`);
-  }
 
   async deleteLiveAnalysisLogs(context?: string, sessionId?: string) {
     const params = new URLSearchParams();
