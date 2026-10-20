@@ -63,9 +63,9 @@ export default function MissionsPage() {
                           <h3 className="text-lg font-bold">{mission.name}</h3>
                           <p className="font-mono text-xs text-[var(--text-muted)] mt-1">{mission.id}</p>
                         </div>
-                        <span className={`px-3 py-1 rounded-full text-xs font-bold ${
-                          mission.status === 'COMPLETED' ? 'bg-[var(--accent-green)]/10 text-[var(--accent-green)]' :
-                          mission.status === 'ACTIVE' ? 'bg-[var(--accent-cyan)]/10 text-[var(--accent-cyan)] animate-pulse' :
+                        <span className={`px-3 py-1 rounded-full text-xs font-bold uppercase ${
+                          mission.status === 'completed' ? 'bg-[var(--accent-green)]/10 text-[var(--accent-green)]' :
+                          mission.status === 'active' ? 'bg-[var(--accent-cyan)]/10 text-[var(--accent-cyan)] animate-pulse' :
                           'bg-[var(--text-secondary)]/10 text-[var(--text-secondary)]'
                         }`}>
                           {mission.status}
@@ -83,15 +83,15 @@ export default function MissionsPage() {
                             <p className="text-sm font-medium">{formatTimestamp(mission.started_at)}</p>
                           </div>
                         )}
-                        {mission.completed_at && (
+                        {(mission.ended_at || (mission as any).completed_at) && (
                           <div>
                             <p className="text-[10px] font-bold tracking-widest text-[var(--text-muted)] uppercase mb-1">Recovered</p>
-                            <p className="text-sm font-medium">{formatTimestamp(mission.completed_at)}</p>
+                            <p className="text-sm font-medium">{formatTimestamp(mission.ended_at || (mission as any).completed_at)}</p>
                           </div>
                         )}
                       </div>
                       
-                      {mission.status === 'PENDING' && (
+                      {(mission.status === 'created' || (mission.status as string) === 'PENDING') && (
                         <div className="mt-6 flex justify-end">
                           <button 
                             onClick={() => startMission(mission.id)}
@@ -101,7 +101,7 @@ export default function MissionsPage() {
                           </button>
                         </div>
                       )}
-                      {mission.status === 'ACTIVE' && (
+                      {mission.status === 'active' && (
                         <div className="mt-6 flex justify-end">
                           <button 
                             onClick={() => completeMission(mission.id)}

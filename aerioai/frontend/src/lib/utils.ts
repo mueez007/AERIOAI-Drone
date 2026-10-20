@@ -133,8 +133,13 @@ export function debounce<T extends (...args: unknown[]) => void>(fn: T, delay: n
 }
 
 /**
- * Classname merger
+ * Classname merger with recursive array flattening
  */
-export function cn(...classes: (string | boolean | undefined | null)[]): string {
-  return classes.filter(Boolean).join(" ");
+export type ClassValue = string | number | boolean | undefined | null | string[] | boolean[];
+
+export function cn(...classes: (ClassValue | ClassValue[])[]): string {
+  return classes
+    .flat(3)
+    .filter(Boolean)
+    .join(" ");
 }

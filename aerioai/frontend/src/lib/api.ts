@@ -41,7 +41,7 @@ class ApiClient {
     return this.token;
   }
 
-  async request<T>(endpoint: string, options: RequestOptions = {}): Promise<T> {
+  async request<T = any>(endpoint: string, options: RequestOptions = {}): Promise<T> {
     const { method = "GET", body, headers = {}, isFormData = false } = options;
 
     const requestHeaders: Record<string, string> = {
@@ -152,6 +152,22 @@ class ApiClient {
     return this.request(`/api/camera/${mediaId}`, { method: "DELETE" });
   }
 
+  async getMedia(missionId?: string): Promise<any[]> {
+    const [photosRes, videosRes] = await Promise.all([
+      this.getPhotos(missionId).catch(() => ({ photos: [] })),
+      this.getVideos(missionId).catch(() => ({ videos: [] })),
+    ]);
+    const photos = (photosRes as any)?.photos || [];
+    const videos = (videosRes as any)?.videos || [];
+    return [...photos, ...videos].sort(
+      (a: any, b: any) => new Date(b.created_at || b.captured_at).getTime() - new Date(a.created_at || a.captured_at).getTime()
+    );
+  }
+
+  async analyzeMedia(mediaId: string): Promise<any> {
+    return this.analyzeScene(mediaId);
+  }
+
   getStreamUrl(): string {
     return `${this.baseUrl}/api/camera/stream`;
   }
@@ -203,9 +219,6 @@ class ApiClient {
     return this.request(`/api/missions?${params}`);
   }
 
-  async getLiveAnalysisHistory(sessionId: string = 'live_stream') {
-    return this.request(`/api/chat/live-analysis-logs?session_id=${sessionId}`);
-  }
 
   async deleteLiveAnalysisLogs(context?: string, sessionId?: string) {
     const params = new URLSearchParams();
@@ -249,20 +262,30 @@ class ApiClient {
   }
 
   // Chat
-  async sendChatMessage(message: string, mediaId?: string, missionId?: string, liveStream = false, generateAudio = false, sessionId?: string, context?: string) {
+  async sendChatMessage(message: string, mediaId?: string, missionId?: string, liveStream = false, generateAudio = false, sessionId?: string, context?: string, missionMode = "surveillance") {
     return this.request("/api/chat/message", {
       method: "POST",
-      body: { message, media_id: mediaId, mission_id: missionId, live_stream: liveStream, generate_audio: generateAudio, session_id: sessionId, context: context || "ai_chat" },
+      body: { 
+        message, 
+        media_id: mediaId, 
+        mission_id: missionId, 
+        live_stream: liveStream, 
+        generate_audio: generateAudio, 
+        session_id: sessionId, 
+        context: context || "ai_chat",
+        mission_mode: missionMode 
+      },
     });
   }
 
-  async sendVoiceCommand(audioBlob: Blob, missionId?: string, liveStream = false, sessionId?: string, context?: string) {
+  async sendVoiceCommand(audioBlob: Blob, missionId?: string, liveStream = false, sessionId?: string, context?: string, missionMode = "surveillance") {
     const formData = new FormData();
     formData.append("audio", audioBlob, "recording.wav");
     if (missionId) formData.append("mission_id", missionId);
     if (liveStream) formData.append("live_stream", "true");
     if (sessionId) formData.append("session_id", sessionId);
     if (context) formData.append("context", context);
+    formData.append("mission_mode", missionMode);
     return this.request("/api/chat/voice", {
       method: "POST",
       body: formData,
@@ -278,17 +301,23 @@ class ApiClient {
     return this.request(`/api/chat/history${qs ? `?${qs}` : ""}`);
   }
 
-  async getStartupAnnouncement() {
-    return this.request("/api/chat/startup-announcement");
+  async getStartupAnnouncement(missionMode?: string) {
+    const params = missionMode ? `?mission_mode=${encodeURIComponent(missionMode)}` : "";
+    return this.request(`/api/chat/startup-announcement${params}`);
+  }
+
+  // --- Trajectory ---
+  async getTrajectory(): Promise<{ points: { lat: number; lon: number; alt?: number; heading?: number; timestamp?: number }[]; source: string; is_simulated: boolean; count: number }> {
+    return this.request("/api/telemetry/trajectory");
   }
 
   // --- Scene & Media Analysis ---
-  async analyzeScene(mediaId: string, prompt?: string, liveStream = false, analysisType = "normal") {
+  async analyzeScene(mediaId: string, prompt?: string, liveStream = false, analysisType = "normal", missionMode = "surveillance") {
     return this.request(
       "/api/chat/analyze-scene",
       { 
         method: "POST", 
-        body: { media_id: mediaId, prompt, live_stream: liveStream, analysis_type: analysisType } 
+        body: { media_id: mediaId, prompt, live_stream: liveStream, analysis_type: analysisType, mission_mode: missionMode } 
       }
     );
   }

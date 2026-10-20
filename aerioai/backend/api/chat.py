@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, UploadFile, File, HTTPException
+from fastapi import APIRouter, Depends, UploadFile, File, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from core.security import get_current_user
@@ -15,7 +15,8 @@ from schemas.chat import (
     DeepVideoAnalysisRequest, DeepVideoAnalysisResponse,
     LiveAnalysisLogResponse
 )
-from typing import List
+from typing import List, Optional
+from config import settings
 
 router = APIRouter(prefix="/api/chat", tags=["AI Chat"])
 gemini_service = GeminiService()
@@ -28,13 +29,34 @@ from services.fc_service import FlightControllerService
 
 fc_service = FlightControllerService()
 
-def _build_system_context(db: Session, user_id: int) -> str:
+def _build_system_context(db: Session, user_id: int, mission_mode: str = "surveillance") -> str:
+    mode_key = (mission_mode or "surveillance").lower().replace("-", "_").replace(" ", "_")
     # 1. Telemetry
     t = fc_service.get_telemetry()
-    ctx = f"System Telemetry: Altitude {t.get('altitude',0)}m, Battery {t.get('battery_percent',0)}%, Speed {t.get('ground_speed',0)}m/s.\n"
+    is_sim = t.get("is_simulated", True)
+    ctx = f"Active Mission Mode: {mode_key.upper()}\n"
+    ctx += f"Telemetry Source: {'SIMULATED (MOCK FC)' if is_sim else 'HARDWARE (INAV/MSP)'}\n"
+    ctx += f"Telemetry Readings: Altitude {t.get('altitude',0)}m, Battery {t.get('battery_percent',0)}%, Speed {t.get('ground_speed',0)}m/s, Heading {t.get('heading',0)}°, Satellites: {t.get('satellites',0)} ({t.get('fix_type','NO_FIX')}).\n"
     
-    # 2. Chat History (last 10)
-    history = db.query(LiveAnalysisLog).filter(LiveAnalysisLog.user_id == user_id).order_by(LiveAnalysisLog.created_at.desc()).limit(10).all()
+    # Mode-specific mission objectives
+    if mode_key == "search_rescue":
+        ctx += "Tactical Objective: Search & Rescue. Scan for human presence, survivor distress signals, thermal body heat signatures, and grid search coverage.\n"
+    elif mode_key == "agriculture":
+        ctx += "Tactical Objective: Precision Agriculture. Survey crop canopy vigor, multispectral NDVI health patterns, irrigation deficits, and weed clusters.\n"
+    elif mode_key == "inspection":
+        ctx += "Tactical Objective: Infrastructure Inspection. Inspect structural assets (facades, pylons, wind turbines) for micro-cracks, surface corrosion, thermal hot spots, and safety standoff distance.\n"
+    else:
+        ctx += "Tactical Objective: Aerial Surveillance. Monitor perimeter security, unauthorized intrusion, movement anomalies, and tactical threat status.\n"
+    
+    # 2. Chat History (isolated to current mission mode)
+    mode_context_key = f"groundstation_{mode_key}"
+    history = db.query(LiveAnalysisLog).filter(
+        LiveAnalysisLog.user_id == user_id,
+        (LiveAnalysisLog.context == mode_context_key) | 
+        (LiveAnalysisLog.context == mode_key) | 
+        (LiveAnalysisLog.context.is_(None) & (mode_key == "surveillance"))
+    ).order_by(LiveAnalysisLog.created_at.desc()).limit(10).all()
+
     if history:
         ctx += "Recent Chat History:\n"
         for h in reversed(history):
@@ -71,8 +93,9 @@ def chat_message(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """AI Copilot chat - text in, text out."""
-    ctx = _build_system_context(db, current_user.id)
+    """AI Copilot chat - text in, text out with mission mode context."""
+    mode = payload.mission_mode or "surveillance"
+    ctx = _build_system_context(db, current_user.id, mission_mode=mode)
     if payload.live_stream:
         frame_bytes = camera_service.get_current_snapshot_bytes()
         if frame_bytes:
@@ -92,7 +115,8 @@ def chat_message(
             message=payload.message, 
             context=ctx,
             camera_service=camera_service,
-            gemini_service=gemini_service
+            gemini_service=gemini_service,
+            mission_mode=mode
         )
 
     audio_url = None
@@ -114,7 +138,8 @@ def chat_message(
         live_stream=payload.live_stream,
         audio_url=audio_url,
         session_id=payload.session_id,
-        context=payload.context
+        context=payload.context,
+        mission_mode=mode
     )
 
 
@@ -126,17 +151,27 @@ async def voice_command(
     live_stream: bool = False,
     session_id: str = None,
     context: str = "ai_chat",
+    mission_mode: str = "surveillance",
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """Voice command - audio in, text + audio out."""
     audio_bytes = await audio.read()
+    if not audio_bytes or len(audio_bytes) < 100:
+        raise HTTPException(status_code=400, detail="Audio recording is empty or too short. Please speak clearly and try again.")
 
     transcribed_text = groq_service.transcribe_audio(audio_bytes)
-    if not transcribed_text:
-        raise HTTPException(status_code=400, detail="Could not transcribe audio")
+    if not transcribed_text and gemini_service.is_available():
+        mime = "audio/webm" if audio_bytes.startswith(b"\x1a\x45\xdf\xa3") else "audio/wav"
+        transcribed_text = gemini_service.transcribe_audio(audio_bytes, mime)
 
-    ctx = _build_system_context(db, current_user.id)
+    if not transcribed_text:
+        raise HTTPException(
+            status_code=400, 
+            detail="Could not transcribe audio. Speech recognition service is currently unavailable or unconfigured in backend/.env."
+        )
+
+    mode = mission_mode or "surveillance"
+    ctx = _build_system_context(db, current_user.id, mission_mode=mode)
     if live_stream:
         frame_bytes = camera_service.get_current_snapshot_bytes()
         if frame_bytes:
@@ -152,7 +187,7 @@ async def voice_command(
     elif mission_id:
         ai_response = groq_service.chat_about_mission(transcribed_text, mission_id, db)
     else:
-        ai_response = groq_service.general_chat(transcribed_text, context=ctx)
+        ai_response = groq_service.general_chat(transcribed_text, context=ctx, mission_mode=mode)
 
     audio_path = tts_service.generate_speech(ai_response)
 
@@ -178,6 +213,7 @@ async def voice_command(
         transcribed_text=transcribed_text,
         ai_response=ai_response,
         audio_url=audio_path,
+        mission_mode=mode,
     )
 
 
@@ -205,22 +241,15 @@ def analyze_scene(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """Analyze a photo/video with full scene understanding."""
+    """Analyze a photo/video with full scene understanding and mission mode context."""
+    mode = payload.mission_mode or "surveillance"
     if payload.live_stream:
         frame_bytes = camera_service.get_current_snapshot_bytes()
         if frame_bytes:
-            result = gemini_service.analyze_live_scene(frame_bytes, payload.prompt)
+            result = gemini_service.analyze_live_scene(frame_bytes, payload.prompt, mission_mode=mode)
         else:
-            # Camera unavailable - return a mock/fallback analysis
-            result = {
-                "summary": "Camera feed unavailable. Please check that your camera is connected and macOS camera permissions are granted to the Terminal in System Settings > Privacy & Security > Camera.",
-                "activity": "No feed",
-                "objects": [],
-                "threat_level": "LOW",
-                "confidence": 0,
-                "recommendations": "Check camera permissions and connectivity.",
-                "key_observations": [],
-            }
+            # Camera unavailable - return a mock/fallback analysis tailored to mission
+            result = gemini_service._mock_analysis(mission_mode=mode)
         media_id = "live"
     else:
         media = db.query(Media).filter(Media.id == payload.media_id).first()
@@ -333,14 +362,32 @@ def deep_analyze_video(
 
 
 @router.get("/startup-announcement")
-def get_startup_announcement(current_user: User = Depends(get_current_user)):
-    """Generate audio URL for startup announcement."""
+def get_startup_announcement(
+    mission_mode: Optional[str] = Query("surveillance"),
+    current_user: User = Depends(get_current_user)
+):
+    mode_key = (mission_mode or "surveillance").lower().replace("-", "_").replace(" ", "_")
+    is_hw = (settings.FC_MODE == "msp") and (fc_service.serial is not None and fc_service.serial.is_open)
+
+    mode_names = {
+        "surveillance": "Surveillance",
+        "search_rescue": "Search & Rescue",
+        "agriculture": "Agriculture",
+        "inspection": "Infrastructure Inspection",
+    }
+    mode_display = mode_names.get(mode_key, "Surveillance")
+
+    # Faithful to original wording: "System is starting. Drone motors configuring. Connection established and ready to fly."
+    if is_hw:
+        text = f"System is starting. Drone motors configuring. Hardware connection established. {mode_display} profile ready to fly."
+    else:
+        text = f"System is starting. Drone motors configuring. Connection established and ready for {mode_display} configuration."
+
     if not tts_service.is_available():
-        return {"audio_url": ""}
+        return {"audio_url": "", "text": text, "mission_mode": mode_key}
         
-    text = "System is starting. Drone motors configuring. Connection established and ready to fly."
     audio_path = tts_service.generate_speech(text)
-    return {"audio_url": audio_path, "text": text}
+    return {"audio_url": audio_path, "text": text, "mission_mode": mode_key}
 
 
 @router.get("/history", response_model=List[LiveAnalysisLogResponse])

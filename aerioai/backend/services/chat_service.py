@@ -26,29 +26,57 @@ class GroqService:
     def is_available(self) -> bool:
         return self.client is not None
 
-    def general_chat(self, message: str, context: str = "", camera_service=None, gemini_service=None) -> str:
-        """General conversation with Groq LLM, with tool calling support."""
+    def _get_mission_system_prompt(self, mission_mode: str = "surveillance") -> str:
+        mode_key = (mission_mode or "surveillance").lower().replace("-", "_").replace(" ", "_")
+        prompts = {
+            "surveillance": (
+                "You are AERIOAI Surveillance Copilot, an elite airborne tactical reconnaissance AI. "
+                "Your domain is perimeter security, unauthorized intrusion detection, patrol routing, and aerial threat intelligence.\n\n"
+                "MISSION DIRECTIVES:\n"
+                "1. Tactical Monitoring: Prioritize security boundaries, movement anomalies, suspicious vehicle presence, and line-of-sight analysis.\n"
+                "2. Professional & Concise: Deliver clear situational assessments (1-3 sentences). For casual greetings, respond warmly as a tactical copilot.\n"
+                "3. Live Camera Intelligence: If asked about live visual feed or what you see right now, call analyze_live_camera.\n"
+                "4. Media Retrieval: Use exact markdown format ![Description](/api/camera/thumbnail/<ID>) for photos, [Video: filename](/api/camera/download/<ID>) for videos.\n"
+            ),
+            "search_rescue": (
+                "You are AERIOAI Search & Rescue Copilot, an urgent airborne SAR tactical AI. "
+                "Your domain is locating missing persons, identifying human thermal signatures, optimizing search patterns (expanding square, creeping line, sector), and disaster response triage.\n\n"
+                "MISSION DIRECTIVES:\n"
+                "1. Life Safety & Triage: Prioritize human identification, thermal body heat anomalies, distress signals, and exact GPS coordinates.\n"
+                "2. SAR Guidance: Provide actionable search altitude (AGL), swath spacing, and survival triage recommendations.\n"
+                "3. Live Camera Intelligence: If asked about the current search view or what is visible, call analyze_live_camera to scan for survivors or distress markers.\n"
+                "4. Media Retrieval: Reference past search photos and videos with exact markdown links from context.\n"
+            ),
+            "agriculture": (
+                "You are AERIOAI Agronomy Survey Copilot, an aerial precision agriculture and photogrammetry AI. "
+                "Your domain is crop canopy vigor, multispectral NDVI health analysis, irrigation deficits, weed infestation mapping, and acreage yield optimization.\n\n"
+                "MISSION DIRECTIVES:\n"
+                "1. Agronomic Intelligence: Prioritize crop stress zones, canopy uniformity, drainage/water logging, and vegetative index variations.\n"
+                "2. Survey Precision: Provide flight altitude suggestions for target GSD (ground sample distance) and overlap percentages (75-80%).\n"
+                "3. Live Camera Intelligence: If asked about current field conditions, call analyze_live_camera to inspect crop rows and foliage.\n"
+                "4. Media Retrieval: Reference past agricultural field orthomosaics and survey photos with exact markdown links.\n"
+            ),
+            "inspection": (
+                "You are AERIOAI Infrastructure Inspection Copilot, a structural integrity and asset inspection AI. "
+                "Your domain is inspecting bridges, wind turbine blades, high-voltage power pylons, industrial pipelines, and concrete facades.\n\n"
+                "MISSION DIRECTIVES:\n"
+                "1. Defect Identification: Prioritize structural micro-cracks, surface corrosion/spalling, thermal hotspots, and fastener integrity.\n"
+                "2. Safe Distance & Clearance: Advise on minimum standoff distance (orbit radius), gimbal pitch angles, and defect severity rating (Critical, Warning, Advisory).\n"
+                "3. Live Camera Intelligence: If asked about the asset structure or what is visible, call analyze_live_camera to perform defect scanning.\n"
+                "4. Media Retrieval: Reference past structural inspection captures with exact markdown links.\n"
+            ),
+        }
+        return prompts.get(mode_key, prompts["surveillance"])
+
+    def general_chat(self, message: str, context: str = "", camera_service=None, gemini_service=None, mission_mode: str = "surveillance") -> str:
+        """General conversation with Groq LLM, with tool calling support and mission-specific system context."""
         if not self.client:
             return self._fallback_response(message)
 
         try:
-            sys_prompt = (
-                "You are AERIOAI, a friendly and intelligent autonomous drone AI copilot. "
-                "You assist with aerial surveillance, mission intelligence, and general conversation.\n\n"
-                "IMPORTANT RULES:\n"
-                "1. For casual greetings (hey, hi, hello, what's up, etc.), respond warmly and casually like a friend. "
-                "Do NOT analyze scenes or give technical reports for casual chat.\n"
-                "2. For mission/surveillance questions, be concise and professional.\n"
-                "3. When the user asks to SEE or RETRIEVE photos or videos from a specific date/time, look through the 'Recent Media' in the System Context below. "
-                "Display matching media using this exact markdown format: ![Description](/api/camera/thumbnail/<ID>)\n"
-                "For videos, use: [Video: filename](/api/camera/download/<ID>)\n"
-                "4. If the user asks to SUMMARIZE, ANALYZE, or DESCRIBE the media, write a conversational response based on the 'Summary' and 'Threat' from the context. Do not just output the markdown link.\n"
-                "5. Keep responses to 1-4 sentences unless the user asks for detail.\n"
-                "6. Never say you can't retrieve images or videos — you have the media data in context below.\n"
-                "7. If the user asks 'what do you see in the live stream', 'what are you looking at right now', or similar, CALL the analyze_live_camera tool.\n\n"
-            )
+            sys_prompt = self._get_mission_system_prompt(mission_mode)
             if context:
-                sys_prompt += f"System Context:\n{context}\n\n"
+                sys_prompt += f"\nSystem Context:\n{context}\n\n"
 
             tools = [
                 {
@@ -158,6 +186,10 @@ class GroqService:
 
     def transcribe_audio(self, audio_bytes: bytes) -> Optional[str]:
         """Transcribe audio using Groq Whisper API."""
+        if not audio_bytes or len(audio_bytes) < 100:
+            print("Audio bytes empty or too small (<100 bytes)")
+            return None
+
         if not self.client:
             print("Groq not available for transcription")
             return None
@@ -165,8 +197,20 @@ class GroqService:
         try:
             from io import BytesIO
 
+            # Detect container format from magic bytes for Whisper API
+            if audio_bytes.startswith(b"\x1a\x45\xdf\xa3"):
+                filename = "audio.webm"
+            elif audio_bytes.startswith(b"OggS"):
+                filename = "audio.ogg"
+            elif audio_bytes.startswith(b"RIFF"):
+                filename = "audio.wav"
+            elif audio_bytes.startswith(b"ID3") or audio_bytes.startswith(b"\xff\xfb"):
+                filename = "audio.mp3"
+            else:
+                filename = "audio.webm"
+
             audio_file = BytesIO(audio_bytes)
-            audio_file.name = "audio.wav"
+            audio_file.name = filename
 
             transcription = self.client.audio.transcriptions.create(
                 model="whisper-large-v3",

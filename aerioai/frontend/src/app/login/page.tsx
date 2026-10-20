@@ -111,15 +111,15 @@ export default function LoginPage() {
                   Authenticating...
                 </>
               ) : (
-                "Authenticate"
+                "Authenticate & Enter Ground Station"
               )}
             </button>
           </form>
         </div>
 
-        <div className="text-center mt-12">
+        <div className="text-center mt-8">
           <p className="text-xs font-mono text-[var(--text-muted)]">
-            AERIOAI OS v2.0.4 <br /> Secure connection established.
+            AERIOAI Multi-Mission Ground Control Station • v2.0
           </p>
         </div>
       </div>

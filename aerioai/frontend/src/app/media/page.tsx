@@ -62,8 +62,10 @@ export default function MediaPage() {
   }
 
   // Split into images and videos for a cool layout
-  const images = mediaItems.filter(m => m.type === 'image');
-  const videos = mediaItems.filter(m => m.type === 'video');
+  const isImage = (m: Media) => m.media_type === 'photo' || (m as any).type === 'image';
+  const getMediaUrl = (m: Media) => (m as any).url || api.getMediaDownloadUrl(m.id);
+  const images = mediaItems.filter(isImage);
+  const videos = mediaItems.filter(m => !isImage(m));
 
   return (
     <div className="flex flex-col gap-8 h-full animate-fade-in relative">
@@ -94,14 +96,14 @@ export default function MediaPage() {
               onClick={(e) => handleAnalyze(e, media)}
             >
               <div className="relative aspect-[4/3] bg-black/5 dark:bg-white/5 border-b border-[var(--border-color)] overflow-hidden">
-                {media.type === 'image' ? (
-                  <img src={media.url} alt="Capture" className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105" />
+                {isImage(media) ? (
+                  <img src={getMediaUrl(media)} alt="Capture" className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105" />
                 ) : (
-                  <video src={media.url} className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105" controls />
+                  <video src={getMediaUrl(media)} className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105" controls />
                 )}
                 
                 <div className="absolute top-4 left-4 glass-pill px-3 py-1 bg-black/40 border-white/10 text-white shadow-lg backdrop-blur-md">
-                  <span className="text-[10px] font-bold tracking-widest uppercase">{media.type}</span>
+                  <span className="text-[10px] font-bold tracking-widest uppercase">{media.media_type || (media as any).type || "photo"}</span>
                 </div>
                 
                 {/* Analyze Overlay Button */}
@@ -155,10 +157,10 @@ export default function MediaPage() {
             <div className="flex-1 overflow-y-auto p-6 md:p-8 flex flex-col md:flex-row gap-8">
               <div className="md:w-1/2 flex flex-col gap-4">
                 <div className="rounded-2xl overflow-hidden border border-[var(--border-color)] shadow-inner bg-black/5 dark:bg-white/5">
-                  {selectedMedia.type === 'image' ? (
-                    <img src={selectedMedia.url} alt="Selected" className="w-full h-auto object-contain max-h-[400px]" />
+                  {isImage(selectedMedia) ? (
+                    <img src={getMediaUrl(selectedMedia)} alt="Selected" className="w-full h-auto object-contain max-h-[400px]" />
                   ) : (
-                    <video src={selectedMedia.url} controls className="w-full h-auto max-h-[400px]" />
+                    <video src={getMediaUrl(selectedMedia)} controls className="w-full h-auto max-h-[400px]" />
                   )}
                 </div>
                 

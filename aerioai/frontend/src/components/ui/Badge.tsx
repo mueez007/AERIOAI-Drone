@@ -1,7 +1,8 @@
 import { cn } from "@/lib/utils";
 
 interface BadgeProps {
-  children: React.ReactNode;
+  children?: React.ReactNode;
+  label?: string;
   variant?: "cyan" | "green" | "red" | "yellow" | "neutral";
   size?: "sm" | "md";
   pulse?: boolean;
@@ -10,6 +11,7 @@ interface BadgeProps {
 
 export default function Badge({
   children,
+  label,
   variant = "cyan",
   size = "sm",
   pulse = false,
@@ -42,7 +44,7 @@ export default function Badge({
           "animate-pulse"
         )} />
       )}
-      {children}
+      {children ?? label}
     </span>
   );
 }

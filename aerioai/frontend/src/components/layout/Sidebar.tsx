@@ -148,7 +148,7 @@ export default function Sidebar() {
           {NAV_ITEMS.map((item, index) => {
             const isActive =
               pathname === item.path ||
-              (item.path !== "/" && pathname.startsWith(item.path));
+              ((item.path as string) !== "/" && pathname.startsWith(item.path));
 
             return (
               <div key={item.path} className="relative">

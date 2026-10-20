@@ -59,6 +59,8 @@ export interface ObjectDetection {
   confidence: number;
 }
 
+export type Media = MediaItem;
+
 export interface MediaListResponse {
   total: number;
   photos: MediaItem[];
@@ -98,6 +100,9 @@ export interface TelemetryData {
   home_lat: number;
   home_lon: number;
   distance_to_home: number;
+  is_simulated?: boolean;
+  source?: "msp" | "mock" | "disconnected" | string;
+  timestamp?: number;
 }
 
 export interface GPSData {
@@ -110,6 +115,9 @@ export interface GPSData {
   fix_type: string;
   home_lat: number;
   home_lon: number;
+  is_simulated?: boolean;
+  source?: string;
+  timestamp?: number;
 }
 
 export interface AttitudeData {
@@ -125,6 +133,7 @@ export interface BatteryData {
   current: number;
   mah_used: number;
   cell_count: number;
+  cells?: number;
 }
 
 export interface DroneStatus {
